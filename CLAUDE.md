@@ -45,6 +45,15 @@ These two documents are authoritative. If something here conflicts with them, th
 
 See `requirements.md` for the full list — notably: real payment gateway integration, recurring invoices, multi-currency/i18n, a live Kubernetes cluster (manifests are artifacts only), and advanced reporting beyond the dashboard summary. Don't add these unless asked.
 
+## Development workflow
+
+Each step in the Build order below is one "sequence activity" and follows this loop — do not skip steps of this loop or bundle multiple build-order steps together:
+
+1. **Route the work to the right subagent** — use `csharp-developer` for backend/.NET work, `react-developer` for frontend/React work. Don't implement backend or frontend code directly without going through the matching subagent.
+2. **`qa-engineer` tests it** — after the dev subagent finishes a step, `qa-engineer` writes/runs the relevant tests from this document's "Testing" section and, where applicable (anything involving the running application — API endpoints, the Kafka pipeline, a UI screen), verifies it actually works in a local environment (`docker-compose up` + `dotnet test`/`npm test`/manual exercising) — not just that the code compiles.
+3. **Commit** — once a step is implemented and verified by `qa-engineer`, commit the change with a message describing that step. Don't commit a step that hasn't been tested yet.
+4. **Push only when explicitly asked** — commits stay local until the project owner asks for a push.
+
 ## Build order
 
 Follow the sequence in `architecture.md`'s "Build order" section — domain/persistence first, then auth, then core CRUD, then the Kafka pipeline, then frontend, then containerization/deployment/CI.
