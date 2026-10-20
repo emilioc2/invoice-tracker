@@ -1,0 +1,29 @@
+# .NET
+backend/**/bin/
+backend/**/obj/
+*.user
+*.suo
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.vs/
+.idea/
+.DS_Store
+
+# Docker
+docker-compose.override.yml
+
+# Claude Code local/personal state (agent definitions in .claude/agents/ ARE committed)
+.claude/settings.local.json
+.claude/.cc-writes/
+
