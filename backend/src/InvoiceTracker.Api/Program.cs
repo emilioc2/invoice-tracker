@@ -73,3 +73,9 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// Testability marker: top-level-statement Program.cs compiles to an `internal sealed partial
+// class Program`, which WebApplicationFactory<Program> (used by InvoiceTracker.IntegrationTests,
+// a different assembly) can't reference without this. Standard, Microsoft-documented fix —
+// non-behavioral.
+public partial class Program { }
