@@ -23,7 +23,26 @@ public interface IApplicationDbContext
     /// </summary>
     DbSet<User> BusinessUsers { get; }
 
+    DbSet<Client> Clients { get; }
+
+    DbSet<Invoice> Invoices { get; }
+
+    DbSet<InvoiceLineItem> InvoiceLineItems { get; }
+
+    DbSet<BusinessInvoiceCounter> BusinessInvoiceCounters { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically bootstraps (first call for a business) or increments (every call after) that
+    /// business's <see cref="BusinessInvoiceCounter"/> row via a single `INSERT ... ON CONFLICT DO
+    /// UPDATE ... RETURNING` statement, and returns the resulting number. Race-safe under
+    /// concurrent callers for the same business — Postgres's own `ON CONFLICT` row-level locking
+    /// does the work, with no separate SELECT-then-UPDATE round trip for a concurrent request to
+    /// interleave with. Must be called inside the same transaction as the invoice insert it backs,
+    /// so numbering and invoice creation commit (or roll back) together.
+    /// </summary>
+    Task<int> GetNextInvoiceNumberAsync(Guid businessId, CancellationToken cancellationToken = default);
 }

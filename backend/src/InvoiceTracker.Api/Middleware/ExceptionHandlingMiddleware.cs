@@ -54,6 +54,16 @@ public class ExceptionHandlingMiddleware
                 payload = new { title = "Request could not be completed.", errors = identityOperationException.Errors };
                 break;
 
+            case NotFoundException notFoundException:
+                context.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                payload = new { title = notFoundException.Message };
+                break;
+
+            case BadRequestException badRequestException:
+                context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                payload = new { title = badRequestException.Message };
+                break;
+
             default:
                 _logger.LogError(exception, "Unhandled exception");
                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;

@@ -38,6 +38,25 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
         return await Database.BeginTransactionAsync(cancellationToken);
     }
 
+    public async Task<int> GetNextInvoiceNumberAsync(Guid businessId, CancellationToken cancellationToken = default)
+    {
+        // Single atomic upsert: bootstraps the business's first counter row (LastNumber = 1) on
+        // its first-ever invoice, or increments the existing row on every call after — one round
+        // trip, no separate "create the counter row at registration" step, and no app-level
+        // row-locking code. Postgres's own ON CONFLICT handling serializes concurrent callers for
+        // the same BusinessId, which is what keeps this race-safe under concurrent invoice
+        // creation (see CreateInvoiceCommandHandler, which calls this inside the same transaction
+        // as the invoice insert).
+        var results = await Database.SqlQuery<int>(
+            $"""
+             INSERT INTO "BusinessInvoiceCounters" ("BusinessId", "LastNumber") VALUES ({businessId}, 1)
+             ON CONFLICT ("BusinessId") DO UPDATE SET "LastNumber" = "BusinessInvoiceCounters"."LastNumber" + 1
+             RETURNING "LastNumber"
+             """).ToListAsync(cancellationToken);
+
+        return results.Single();
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
