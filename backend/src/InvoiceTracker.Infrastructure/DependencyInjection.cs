@@ -2,6 +2,7 @@ using System.Text;
 using InvoiceTracker.Application.Common.Interfaces;
 using InvoiceTracker.Infrastructure.Email;
 using InvoiceTracker.Infrastructure.Identity;
+using InvoiceTracker.Infrastructure.Messaging;
 using InvoiceTracker.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -65,8 +66,12 @@ public static class DependencyInjection
         services.AddScoped<IIdentityService, IdentityService>();
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 
-        // TEMPORARY: replaced by FormspreeEmailSender in build-order step 6.
-        services.AddSingleton<IEmailSender, NoOpEmailSender>();
+        services.Configure<FormspreeSettings>(configuration.GetSection("Formspree"));
+        services.AddHttpClient<IEmailSender, FormspreeEmailSender>();
+
+        services.Configure<KafkaSettings>(configuration.GetSection("Kafka"));
+        services.AddSingleton<IEventPublisher, KafkaEventPublisher>();
+        services.AddHostedService<OverdueNotificationConsumer>();
 
         return services;
     }

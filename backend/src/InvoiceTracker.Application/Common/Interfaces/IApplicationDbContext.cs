@@ -31,6 +31,10 @@ public interface IApplicationDbContext
 
     DbSet<BusinessInvoiceCounter> BusinessInvoiceCounters { get; }
 
+    DbSet<Notification> Notifications { get; }
+
+    DbSet<OutboxMessage> OutboxMessages { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);

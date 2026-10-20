@@ -1,3 +1,4 @@
+using InvoiceTracker.Api.BackgroundServices;
 using InvoiceTracker.Api.Middleware;
 using InvoiceTracker.Application;
 using InvoiceTracker.Infrastructure;
@@ -36,6 +37,13 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// The other half of the Kafka pipeline (KafkaEventPublisher, OverdueNotificationConsumer) is
+// registered inside AddInfrastructure, since those are Infrastructure-layer adapters. These two
+// live in the Api project itself (see architecture.md's folder layout) because they only depend
+// on IApplicationDbContext/IEventPublisher, not on Kafka directly.
+builder.Services.AddHostedService<OverdueInvoiceScannerService>();
+builder.Services.AddHostedService<OutboxRelayService>();
 
 // Every endpoint requires an authenticated caller by default, from here on — controllers/routes
 // that shouldn't (just AuthController's four routes, for now) opt out with [AllowAnonymous].
