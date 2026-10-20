@@ -1,5 +1,5 @@
 ---
-name: qa-engineer
+name: invoice-qa-engineer
 description: "Use this agent to write and run the automated test suite for Invoice Tracker — backend unit/integration tests (xUnit, FluentAssertions, NSubstitute, Testcontainers) and frontend component tests (Vitest, React Testing Library, MSW) — per the test plan in source_documents/architecture.md. Always read CLAUDE.md and architecture.md's 'Test plan' section first."
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
