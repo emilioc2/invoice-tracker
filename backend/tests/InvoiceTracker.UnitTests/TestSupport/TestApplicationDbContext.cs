@@ -36,10 +36,44 @@ public class TestApplicationDbContext : DbContext, IApplicationDbContext
         return Task.FromResult<IDbContextTransaction>(new NoOpDbContextTransaction());
     }
 
-    public Task<int> GetNextInvoiceNumberAsync(Guid businessId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// The production implementation (<c>ApplicationDbContext.GetNextInvoiceNumberAsync</c>) uses a
+    /// Postgres-specific raw-SQL atomic upsert (<c>INSERT ... ON CONFLICT ... RETURNING</c>) to stay
+    /// race-safe under concurrent invoice creation — EF Core's in-memory provider doesn't support
+    /// that SQL, and per architecture.md's test plan, concurrency-safety itself is integration-test
+    /// territory, not unit. This fake re-implements just the per-business sequencing semantics
+    /// (first call for a business starts at 1, each subsequent call increments by 1) via plain LINQ
+    /// so handler-level unit tests (e.g. <c>CreateInvoiceCommandHandler</c>'s numbering/formatting
+    /// logic) can exercise the "INV-0001 -> INV-0002" behavior without needing a real Postgres.
+    /// </summary>
+    public async Task<int> GetNextInvoiceNumberAsync(Guid businessId, CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException(
-            "Not needed by the Kafka pipeline unit tests this fake context was built for.");
+        var counter = await BusinessInvoiceCounters.SingleOrDefaultAsync(c => c.BusinessId == businessId, cancellationToken);
+        if (counter is null)
+        {
+            counter = new BusinessInvoiceCounter { BusinessId = businessId, LastNumber = 1 };
+            BusinessInvoiceCounters.Add(counter);
+        }
+        else
+        {
+            counter.LastNumber += 1;
+        }
+
+        await SaveChangesAsync(cancellationToken);
+        return counter.LastNumber;
+    }
+
+    /// <summary>
+    /// Convenience factory for tests that just need a standalone in-memory context (handler tests
+    /// that construct their own <see cref="IApplicationDbContext"/> directly, as opposed to the
+    /// Kafka BackgroundServices tests which go through <see cref="ScopeFactoryHelper"/>).
+    /// </summary>
+    public static TestApplicationDbContext Create()
+    {
+        var options = new DbContextOptionsBuilder<TestApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new TestApplicationDbContext(options);
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
