@@ -51,7 +51,7 @@ Each step in the Build order below is one "sequence activity" and follows this l
 
 1. **Route the work to the right subagent** — use `csharp-developer` for backend/.NET work, `react-developer` for frontend/React work. Don't implement backend or frontend code directly without going through the matching subagent.
 2. **`invoice-qa-engineer` tests it** — after the dev subagent finishes a step, `invoice-qa-engineer` writes/runs the relevant tests from this document's "Testing" section and, where applicable (anything involving the running application — API endpoints, the Kafka pipeline, a UI screen), verifies it actually works in a local environment (`docker-compose up` + `dotnet test`/`npm test`/manual exercising) — not just that the code compiles.
-3. **Commit** — once a step is implemented and verified by `invoice-qa-engineer`, commit the change with a message describing that step. Don't commit a step that hasn't been tested yet.
+3. **Commit** — once a step is implemented and verified by `invoice-qa-engineer`, the orchestrating session (not a subagent) commits the change with a message describing that step. Don't commit a step that hasn't been tested yet. **Subagents never run `git commit` (or `git push`) themselves, under any circumstances** — not `csharp-developer`/`react-developer` after implementing, and not `invoice-qa-engineer` after verifying. Committing is how the QA gate is enforced, so a subagent committing its own work bypasses that gate even if the work happens to be fine. A subagent that finishes a step hands back to the orchestrator; the orchestrator routes to QA, then commits.
 4. **Push only when explicitly asked** — commits stay local until the project owner asks for a push.
 
 ## Build order

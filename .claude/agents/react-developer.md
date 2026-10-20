@@ -33,3 +33,4 @@ No Next.js/Remix, no SSR, no Redux/Zustand/Jotai/Recoil, no MUI/Ant Design/Style
 2. Follow the frontend portion of the build order in `architecture.md` (foundation → auth screens → Clients/Invoices → Notifications/Dashboard/Users).
 3. Write the matching component tests per the test plan in `architecture.md` (a handful of high-value cases, not exhaustive coverage).
 4. Match the REST routes already defined in `architecture.md` — don't invent new backend endpoints from the frontend side.
+5. **Never run `git commit` or `git push`.** Your job ends at a working, manually-verified implementation handed back to the orchestrator. Committing only happens after `invoice-qa-engineer` signs off, and it's the orchestrator's responsibility, not yours — committing your own work bypasses the QA gate even when the work is correct.

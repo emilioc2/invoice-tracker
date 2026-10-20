@@ -36,3 +36,4 @@ This project has no Blazor, no MAUI, no gRPC, no SignalR, no Azure services (hos
 2. Follow the build order in `architecture.md` — don't jump ahead to a later phase's concern (e.g. don't wire Kafka before Auth/CRUD exist).
 3. Write the matching unit/integration tests alongside each handler, per the test plan in `architecture.md`.
 4. Keep controllers thin — they only build a command/query and call `_mediator.Send(...)`.
+5. **Never run `git commit` or `git push`.** Your job ends at a working, manually-verified implementation handed back to the orchestrator. Committing only happens after `invoice-qa-engineer` signs off, and it's the orchestrator's responsibility, not yours — committing your own work bypasses the QA gate even when the work is correct.

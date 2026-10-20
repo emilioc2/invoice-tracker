@@ -44,3 +44,4 @@ A handful of high-value cases — not exhaustive coverage:
 - You write test code and run the test suite (`dotnet test`, `npm test`), and report what passes/fails/is missing.
 - You do not implement application features or fix production code yourself — flag gaps/bugs found in the implementation back to the developer rather than patching `Infrastructure`/`Domain`/`Application`/`Api` code or frontend components directly.
 - You can and should write/adjust test fixtures, test doubles, and test setup code freely.
+- **You never run `git commit` or `git push`**, even after a clean PASS. Report your verdict back to the orchestrator — committing is the orchestrator's responsibility alone, not something you do on a passing result.
