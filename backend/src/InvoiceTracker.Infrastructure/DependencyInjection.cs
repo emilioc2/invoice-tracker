@@ -3,6 +3,7 @@ using InvoiceTracker.Application.Common.Interfaces;
 using InvoiceTracker.Infrastructure.Email;
 using InvoiceTracker.Infrastructure.Identity;
 using InvoiceTracker.Infrastructure.Messaging;
+using InvoiceTracker.Infrastructure.Pdf;
 using InvoiceTracker.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -10,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using QuestPDF.Infrastructure;
 
 namespace InvoiceTracker.Infrastructure;
 
@@ -17,6 +19,11 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        // QuestPDF's Community license requires this to be set once at startup, or it throws at
+        // render time. This project is eligible for the free Community license (small
+        // team/portfolio project), so set it unconditionally here.
+        QuestPDF.Settings.License = LicenseType.Community;
+
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 
@@ -72,6 +79,8 @@ public static class DependencyInjection
         services.Configure<KafkaSettings>(configuration.GetSection("Kafka"));
         services.AddSingleton<IEventPublisher, KafkaEventPublisher>();
         services.AddHostedService<OverdueNotificationConsumer>();
+
+        services.AddScoped<IPdfGenerator, QuestPdfInvoiceGenerator>();
 
         return services;
     }

@@ -7,6 +7,7 @@ using InvoiceTracker.Application.Invoices.Commands.SendInvoice;
 using InvoiceTracker.Application.Invoices.Commands.UpdateInvoice;
 using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.Application.Invoices.Queries.GetInvoiceById;
+using InvoiceTracker.Application.Invoices.Queries.GetInvoicePdf;
 using InvoiceTracker.Application.Invoices.Queries.ListInvoices;
 using InvoiceTracker.Domain.Enums;
 using MediatR;
@@ -16,8 +17,8 @@ namespace InvoiceTracker.Api.Controllers;
 
 /// <summary>
 /// Every route here requires a JWT and is scoped to the caller's own business — see
-/// ClientsController's summary for the same note. PDF export and Kafka-notification-related
-/// routes are later build-order steps, not implemented here.
+/// ClientsController's summary for the same note. Kafka-notification-related routes are a later
+/// build-order step, not implemented here.
 /// </summary>
 [ApiController]
 [Route("api/invoices")]
@@ -50,6 +51,13 @@ public class InvoicesController : ControllerBase
     {
         var result = await _mediator.Send(new GetInvoiceByIdQuery(id), cancellationToken);
         return Ok(result);
+    }
+
+    [HttpGet("{id:guid}/pdf")]
+    public async Task<IActionResult> GetPdf(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetInvoicePdfQuery(id), cancellationToken);
+        return File(result.Content, "application/pdf", result.FileName);
     }
 
     [HttpPost]
