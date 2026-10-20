@@ -1,0 +1,6 @@
+@InvoiceTracker.Api_HostAddress = http://localhost:0
+
+GET {{InvoiceTracker.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
