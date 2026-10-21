@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Infrastructure;
 
@@ -17,7 +18,7 @@ namespace InvoiceTracker.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
     {
         // QuestPDF's Community license requires this to be set once at startup, or it throws at
         // render time. This project is eligible for the free Community license (small
@@ -73,8 +74,24 @@ public static class DependencyInjection
         services.AddScoped<IIdentityService, IdentityService>();
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 
+        // FormspreeSettings is bound unconditionally — harmless, and needed once a real
+        // environment actually uses FormspreeEmailSender below.
         services.Configure<FormspreeSettings>(configuration.GetSection("Formspree"));
-        services.AddHttpClient<IEmailSender, FormspreeEmailSender>();
+
+        // In Development, appsettings.Development.json's Formspree:FormEndpoint is still the
+        // documented placeholder (https://formspree.io/f/YOUR_FORM_ID), so a real
+        // FormspreeEmailSender call 404s and throws. Use NoOpEmailSender locally instead — it logs
+        // what it would have sent (handy for reading a reset token out of the console) without
+        // making a real HTTP call. Non-Development environments are expected to have a real
+        // Formspree endpoint configured, so they get the real sender.
+        if (environment.IsDevelopment())
+        {
+            services.AddSingleton<IEmailSender, NoOpEmailSender>();
+        }
+        else
+        {
+            services.AddHttpClient<IEmailSender, FormspreeEmailSender>();
+        }
 
         services.Configure<KafkaSettings>(configuration.GetSection("Kafka"));
         services.AddSingleton<IEventPublisher, KafkaEventPublisher>();

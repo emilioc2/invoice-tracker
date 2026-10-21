@@ -13,10 +13,11 @@ namespace InvoiceTracker.Infrastructure.Email;
 /// guaranteeing delivery to each client's real inbox — that's the documented trade-off, not a bug
 /// to work around here.
 ///
-/// Registered as production default via <c>AddHttpClient&lt;IEmailSender, FormspreeEmailSender&gt;()</c>
-/// in Infrastructure/DependencyInjection.cs. <see cref="NoOpEmailSender"/> remains in the codebase,
-/// unused in production, for test registration (integration tests register a fake IEmailSender and
-/// must never make a real Formspree call).
+/// Registered via <c>AddHttpClient&lt;IEmailSender, FormspreeEmailSender&gt;()</c> in
+/// Infrastructure/DependencyInjection.cs for every environment except Development, which uses
+/// <see cref="NoOpEmailSender"/> instead (Development's Formspree:FormEndpoint is still the
+/// documented placeholder, so a real call here would 404 and throw). Integration tests also
+/// register a fake IEmailSender and must never make a real Formspree call.
 /// </summary>
 public class FormspreeEmailSender : IEmailSender
 {

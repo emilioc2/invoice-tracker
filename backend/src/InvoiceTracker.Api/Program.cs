@@ -36,7 +36,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 
 // Lets the Vite dev server (and, later, whatever origin the deployed frontend lands on) call this
 // API from a browser — browsers block cross-origin fetches without CORS headers regardless of
