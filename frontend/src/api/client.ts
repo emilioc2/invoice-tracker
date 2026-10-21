@@ -51,10 +51,13 @@ export interface ApiFetchOptions extends Omit<RequestInit, "body"> {
   skipAuth?: boolean;
 }
 
-export async function apiFetch<TResponse>(
-  path: string,
-  options: ApiFetchOptions = {},
-): Promise<TResponse> {
+/**
+ * Shared request-sending/error-handling core for `apiFetch`/`apiFetchBlob`: attaches the JWT
+ * (unless `skipAuth`), fires the 401 → logout hook, and throws a consistent `ApiError` (with a
+ * JSON-parsed body where possible) on any non-2xx response. Callers get back the raw, still-ok
+ * `Response` so they can each parse the body their own way (JSON vs. blob).
+ */
+async function sendRequest(path: string, options: ApiFetchOptions): Promise<Response> {
   const { body, skipAuth, headers, ...rest } = options;
 
   const finalHeaders = new Headers(headers);
@@ -103,11 +106,33 @@ export async function apiFetch<TResponse>(
     );
   }
 
+  return response;
+}
+
+export async function apiFetch<TResponse>(
+  path: string,
+  options: ApiFetchOptions = {},
+): Promise<TResponse> {
+  const response = await sendRequest(path, options);
+
   if (response.status === 204) {
     return undefined as TResponse;
   }
 
   return (await safeParseJson(response)) as TResponse;
+}
+
+/**
+ * Same JWT attachment/401 handling as `apiFetch`, but resolves to a `Blob` on success instead of
+ * parsing JSON — needed for binary responses like `GET /api/invoices/{id}/pdf`, which isn't JSON
+ * at all. A failed request still gets its (JSON) error body parsed the same way as `apiFetch`.
+ */
+export async function apiFetchBlob(
+  path: string,
+  options: ApiFetchOptions = {},
+): Promise<Blob> {
+  const response = await sendRequest(path, options);
+  return response.blob();
 }
 
 async function safeParseJson(response: Response): Promise<unknown> {
