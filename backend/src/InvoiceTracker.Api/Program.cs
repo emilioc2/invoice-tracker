@@ -38,6 +38,24 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+// Lets the Vite dev server (and, later, whatever origin the deployed frontend lands on) call this
+// API from a browser — browsers block cross-origin fetches without CORS headers regardless of
+// whether the API itself would accept the request. Origins come from config (Cors:AllowedOrigins),
+// not a hardcoded string, so dev/prod can differ without a code change. No AllowCredentials(): the
+// frontend sends a Bearer token in a header, not a cookie, so credentialed CORS isn't needed, and
+// skipping it avoids the classic (and here, pointless) AllowCredentials + broad-origin misconfiguration.
+const string FrontendCorsPolicy = "FrontendCorsPolicy";
+var corsAllowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(FrontendCorsPolicy, policy =>
+    {
+        policy.WithOrigins(corsAllowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 // The other half of the Kafka pipeline (KafkaEventPublisher, OverdueNotificationConsumer) is
 // registered inside AddInfrastructure, since those are Infrastructure-layer adapters. These two
 // live in the Api project itself (see architecture.md's folder layout) because they only depend
@@ -66,6 +84,8 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseHttpsRedirection();
+
+app.UseCors(FrontendCorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
