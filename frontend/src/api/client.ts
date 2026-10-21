@@ -1,0 +1,111 @@
+// Base fetch wrapper used by every `api/*.ts` resource module. Never call `fetch` directly
+// from a component or hook — go through `apiFetch` so JWT attachment and 401 handling stay
+// centralized in one place.
+
+const API_BASE_URL = (
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:5000"
+).replace(/\/+$/, "");
+
+const TOKEN_STORAGE_KEY = "invoice-tracker.accessToken";
+
+/** Read the persisted JWT. Exposed for AuthContext to rehydrate on mount. */
+export function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setStoredToken(token: string | null): void {
+  if (token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  }
+}
+
+/**
+ * Called by `apiFetch` whenever the API returns 401. AuthContext registers its own logout
+ * function here on mount so a 401 anywhere in the app clears the session and redirects to
+ * `/login`, without `api/client.ts` needing to import AuthContext directly (which would be a
+ * circular dependency — AuthContext itself calls through this client to log in).
+ */
+let unauthorizedHandler: (() => void) | null = null;
+
+export function registerUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export interface ApiFetchOptions extends Omit<RequestInit, "body"> {
+  body?: unknown;
+  /** Skip JWT attachment — only needed for login/register/forgot/reset-password. */
+  skipAuth?: boolean;
+}
+
+export async function apiFetch<TResponse>(
+  path: string,
+  options: ApiFetchOptions = {},
+): Promise<TResponse> {
+  const { body, skipAuth, headers, ...rest } = options;
+
+  const finalHeaders = new Headers(headers);
+  finalHeaders.set("Accept", "application/json");
+
+  let finalBody: BodyInit | undefined;
+  if (body !== undefined) {
+    finalHeaders.set("Content-Type", "application/json");
+    finalBody = JSON.stringify(body);
+  }
+
+  if (!skipAuth) {
+    const token = getStoredToken();
+    if (token) {
+      finalHeaders.set("Authorization", `Bearer ${token}`);
+    }
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...rest,
+    headers: finalHeaders,
+    body: finalBody,
+  });
+
+  if (response.status === 401) {
+    unauthorizedHandler?.();
+    throw new ApiError("Unauthorized", 401, null);
+  }
+
+  if (!response.ok) {
+    const errorBody = await safeParseJson(response);
+    throw new ApiError(
+      `Request to ${path} failed with status ${response.status}`,
+      response.status,
+      errorBody,
+    );
+  }
+
+  if (response.status === 204) {
+    return undefined as TResponse;
+  }
+
+  return (await safeParseJson(response)) as TResponse;
+}
+
+async function safeParseJson(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
