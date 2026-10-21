@@ -10,10 +10,10 @@ frontend/dist/
 frontend/.vite/
 npm-debug.log*
 
-# Env files
-.env
-.env.local
-.env.*.local
+# Env files (root-level / future backend use — frontend/.gitignore owns frontend/.env*)
+/.env
+/.env.local
+/.env.*.local
 
 # IDE / OS
 .vs/
