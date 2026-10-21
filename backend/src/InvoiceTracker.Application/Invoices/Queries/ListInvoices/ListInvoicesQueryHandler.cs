@@ -39,12 +39,14 @@ public class ListInvoicesQueryHandler : IRequestHandler<ListInvoicesQuery, Pagin
 
         if (request.DateFrom.HasValue)
         {
-            query = query.Where(i => i.DueDate >= request.DateFrom.Value);
+            var dateFrom = NormalizeToUtc(request.DateFrom.Value);
+            query = query.Where(i => i.DueDate >= dateFrom);
         }
 
         if (request.DateTo.HasValue)
         {
-            query = query.Where(i => i.DueDate <= request.DateTo.Value);
+            var dateTo = NormalizeToUtc(request.DateTo.Value);
+            query = query.Where(i => i.DueDate <= dateTo);
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -59,4 +61,15 @@ public class ListInvoicesQueryHandler : IRequestHandler<ListInvoicesQuery, Pagin
 
         return new PaginatedResult<InvoiceDto>(items, totalCount, request.PageNumber, request.PageSize);
     }
+
+    /// <summary>
+    /// [FromQuery] DateTime? binding (ASP.NET Core's own DateTime.TryParse-based model binder, not
+    /// System.Text.Json) produces Kind = Unspecified for a bare date-only query value (e.g.
+    /// ?dateFrom=2026-01-01) — exactly what an API consumer might reasonably send. Npgsql (v6+)
+    /// rejects parameterizing a Kind = Unspecified DateTime against a timestamptz column, so this
+    /// normalizes right before the value is used in an EF Core predicate, the actual point of
+    /// contact with Npgsql for this binding path.
+    /// </summary>
+    private static DateTime NormalizeToUtc(DateTime value) =>
+        value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
 }

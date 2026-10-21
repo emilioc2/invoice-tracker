@@ -1,5 +1,6 @@
 using InvoiceTracker.Api.BackgroundServices;
 using InvoiceTracker.Api.Middleware;
+using InvoiceTracker.Api.Serialization;
 using InvoiceTracker.Application;
 using InvoiceTracker.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +9,15 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    // Normalizes every JSON-body-bound DateTime (e.g. CreateInvoiceRequest.DueDate) to Kind = Utc on
+    // read, so a bare date-only string (what an HTML <input type="date"> sends) doesn't crash
+    // Npgsql's deliberate rejection of Kind = Unspecified values against timestamptz columns. See
+    // UtcDateTimeJsonConverter's doc comment. Note: this only covers JSON-body binding — [FromQuery]
+    // DateTime params (e.g. InvoicesController.List's dateFrom/dateTo) go through ASP.NET Core's own
+    // DateTime.TryParse-based model binder, not this converter, and are normalized separately at the
+    // point they reach EF Core (see ListInvoicesQueryHandler).
+    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
