@@ -8,6 +8,12 @@ interface AuthContextValue {
   user: AuthenticatedUser | null;
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
+  register: (
+    businessName: string,
+    businessEmail: string,
+    ownerEmail: string,
+    password: string,
+  ) => Promise<void>;
   logout: () => void;
 }
 
@@ -67,10 +73,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(authenticatedUser);
   }, []);
 
+  // Mirrors `login`'s logic exactly: the backend's `AuthResultDto` is the shared success shape
+  // for both register and login — register logs the new Owner in immediately with a usable JWT,
+  // so there's no separate "register then separately log in" step.
+  const register = useCallback(
+    async (businessName: string, businessEmail: string, ownerEmail: string, password: string) => {
+      const result = await authApi.register(businessName, businessEmail, ownerEmail, password);
+      const authenticatedUser: AuthenticatedUser = {
+        userId: result.userId,
+        businessId: result.businessId,
+        email: result.email,
+        role: result.role,
+      };
+      setStoredToken(result.accessToken);
+      persistUser(authenticatedUser);
+      setToken(result.accessToken);
+      setUser(authenticatedUser);
+    },
+    [],
+  );
+
   const value: AuthContextValue = {
     user,
     token,
     login,
+    register,
     logout,
   };
 

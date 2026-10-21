@@ -3,7 +3,7 @@
 // centralized in one place.
 
 const API_BASE_URL = (
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:5000"
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:5100"
 ).replace(/\/+$/, "");
 
 const TOKEN_STORAGE_KEY = "invoice-tracker.accessToken";
@@ -80,8 +80,18 @@ export async function apiFetch<TResponse>(
   });
 
   if (response.status === 401) {
-    unauthorizedHandler?.();
-    throw new ApiError("Unauthorized", 401, null);
+    // Only an authenticated request coming back 401 means "your session is no longer valid" —
+    // a skipAuth request (login/register/forgot/reset-password) returning 401 means "bad
+    // credentials," which has nothing to do with the current session and must not log it out.
+    if (!skipAuth) {
+      unauthorizedHandler?.();
+    }
+    const errorBody = await safeParseJson(response);
+    throw new ApiError(
+      `Request to ${path} failed with status ${response.status}`,
+      401,
+      errorBody,
+    );
   }
 
   if (!response.ok) {

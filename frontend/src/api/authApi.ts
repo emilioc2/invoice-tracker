@@ -1,9 +1,6 @@
 import { apiFetch } from "@/api/client";
 import type { AuthResult } from "@/types/auth";
 
-// Stub signatures only — real request/response wiring (error states, loading UI) lands in
-// step 11 alongside the actual login/register forms.
-
 export function login(email: string, password: string): Promise<AuthResult> {
   return apiFetch<AuthResult>("/api/auth/login", {
     method: "POST",
@@ -12,20 +9,24 @@ export function login(email: string, password: string): Promise<AuthResult> {
   });
 }
 
+// Mirrors the backend's `RegisterRequest`/`RegisterCommand`: `businessEmail` (the business's own
+// contact email) and `ownerEmail` (the new Owner user's login identity) are two separate fields,
+// not one shared email.
 export function register(
   businessName: string,
-  email: string,
+  businessEmail: string,
+  ownerEmail: string,
   password: string,
 ): Promise<AuthResult> {
   return apiFetch<AuthResult>("/api/auth/register", {
     method: "POST",
     skipAuth: true,
-    body: { businessName, email, password },
+    body: { businessName, businessEmail, ownerEmail, password },
   });
 }
 
-export function forgotPassword(email: string): Promise<void> {
-  return apiFetch<void>("/api/auth/forgot-password", {
+export function forgotPassword(email: string): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>("/api/auth/forgot-password", {
     method: "POST",
     skipAuth: true,
     body: { email },
@@ -33,13 +34,13 @@ export function forgotPassword(email: string): Promise<void> {
 }
 
 export function resetPassword(
-  token: string,
   email: string,
+  token: string,
   newPassword: string,
-): Promise<void> {
-  return apiFetch<void>("/api/auth/reset-password", {
+): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>("/api/auth/reset-password", {
     method: "POST",
     skipAuth: true,
-    body: { token, email, newPassword },
+    body: { email, token, newPassword },
   });
 }
