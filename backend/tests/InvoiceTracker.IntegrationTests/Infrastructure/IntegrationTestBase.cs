@@ -87,7 +87,7 @@ public abstract class IntegrationTestBase
         var now = DateTime.UtcNow;
         var invoiceId = Guid.NewGuid();
 
-        dbContext.Invoices.Add(new Invoice
+        var invoice = new Invoice
         {
             Id = invoiceId,
             BusinessId = businessId,
@@ -96,7 +96,6 @@ public abstract class IntegrationTestBase
             CreatedAtDate = now.AddDays(-30),
             IssueDate = status == InvoiceStatus.Draft ? null : now.AddDays(-30),
             DueDate = now.AddDays(-10),
-            Status = status,
             Subtotal = total,
             TaxRate = 0m,
             TaxAmount = 0m,
@@ -114,11 +113,37 @@ public abstract class IntegrationTestBase
                     LineTotal = total
                 }
             }
-        });
+        };
+
+        // Status's setter is private (see Invoice.TransitionTo) — fast-forward from the default
+        // Draft to the requested starting status via legal transitions only.
+        FastForwardInvoiceStatus(invoice, status);
+
+        dbContext.Invoices.Add(invoice);
 
         await dbContext.SaveChangesAsync();
 
         return invoiceId;
+    }
+
+    /// <summary>
+    /// Shared by the direct-seed helpers below: moves a freshly-constructed (Draft) invoice to an
+    /// arbitrary starting <see cref="InvoiceStatus"/> via <see cref="Invoice.TransitionTo"/> only
+    /// — every status is reachable from Draft in at most two legal steps.
+    /// </summary>
+    private static void FastForwardInvoiceStatus(Invoice invoice, InvoiceStatus target)
+    {
+        if (target == InvoiceStatus.Draft)
+        {
+            return;
+        }
+
+        invoice.TransitionTo(InvoiceStatus.Unpaid);
+
+        if (target != InvoiceStatus.Unpaid)
+        {
+            invoice.TransitionTo(target);
+        }
     }
 
     /// <summary>
@@ -159,7 +184,6 @@ public abstract class IntegrationTestBase
             CreatedAtDate = now.AddDays(-30),
             IssueDate = now.AddDays(-30),
             DueDate = now.AddDays(-10),
-            Status = InvoiceStatus.Overdue,
             Subtotal = 100m,
             TaxRate = 0m,
             TaxAmount = 0m,
@@ -178,6 +202,7 @@ public abstract class IntegrationTestBase
                 }
             }
         };
+        FastForwardInvoiceStatus(invoice, InvoiceStatus.Overdue);
         dbContext.Invoices.Add(invoice);
 
         var notification = new Notification

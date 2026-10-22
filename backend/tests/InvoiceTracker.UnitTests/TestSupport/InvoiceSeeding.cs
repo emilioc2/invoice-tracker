@@ -38,7 +38,7 @@ public static class InvoiceSeeding
         DateTime? dueDate = null)
     {
         var createdAt = DateTime.UtcNow.AddDays(-10);
-        return new Invoice
+        var invoice = new Invoice
         {
             Id = Guid.NewGuid(),
             BusinessId = businessId,
@@ -49,12 +49,34 @@ public static class InvoiceSeeding
             // in this fixture has already been "sent" at some point.
             IssueDate = status == InvoiceStatus.Draft ? null : createdAt,
             DueDate = dueDate ?? DateTime.UtcNow.AddDays(10),
-            Status = status,
             Subtotal = 1000m,
             TaxRate = 0m,
             TaxAmount = 0m,
             Total = 1000m,
             LastModifiedDate = createdAt
         };
+
+        // Status's setter is private (see Invoice.TransitionTo) — fast-forward a freshly
+        // constructed (Draft) invoice to the requested starting status via legal transitions
+        // only, which this project's status workflow makes reachable for every enum value
+        // within at most two steps from Draft.
+        FastForwardTo(invoice, status);
+
+        return invoice;
+    }
+
+    private static void FastForwardTo(Invoice invoice, InvoiceStatus target)
+    {
+        if (target == InvoiceStatus.Draft)
+        {
+            return;
+        }
+
+        invoice.TransitionTo(InvoiceStatus.Unpaid);
+
+        if (target != InvoiceStatus.Unpaid)
+        {
+            invoice.TransitionTo(target);
+        }
     }
 }

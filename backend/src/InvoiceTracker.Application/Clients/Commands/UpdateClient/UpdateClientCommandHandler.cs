@@ -1,8 +1,7 @@
 using InvoiceTracker.Application.Clients.Common;
-using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace InvoiceTracker.Application.Clients.Commands.UpdateClient;
 
@@ -24,12 +23,7 @@ public class UpdateClientCommandHandler : IRequestHandler<UpdateClientCommand, C
         // Scoped by BusinessId resolved server-side — a client belonging to a different business
         // is indistinguishable from one that doesn't exist, so this returns 404, not 403.
         var client = await _dbContext.Clients
-            .FirstOrDefaultAsync(c => c.Id == request.Id && c.BusinessId == businessId, cancellationToken);
-
-        if (client is null)
-        {
-            throw new NotFoundException("Client not found.");
-        }
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "Client not found.", cancellationToken);
 
         client.Name = request.Name;
         client.Email = request.Email;

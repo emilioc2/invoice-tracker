@@ -1,6 +1,8 @@
+using InvoiceTracker.Domain.Common;
+
 namespace InvoiceTracker.Domain.Entities;
 
-public class Client
+public class Client : ITenantScopedEntity
 {
     public Guid Id { get; set; }
     public Guid BusinessId { get; set; }

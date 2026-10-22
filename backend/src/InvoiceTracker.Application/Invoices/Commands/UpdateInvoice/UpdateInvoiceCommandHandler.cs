@@ -1,5 +1,6 @@
 using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.Domain.Enums;
 using MediatR;
@@ -24,13 +25,10 @@ public class UpdateInvoiceCommandHandler : IRequestHandler<UpdateInvoiceCommand,
 
         var invoice = await _dbContext.Invoices
             .Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.Id == request.Id && i.BusinessId == businessId, cancellationToken);
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "Invoice not found.", cancellationToken);
 
-        if (invoice is null)
-        {
-            throw new NotFoundException("Invoice not found.");
-        }
-
+        // Edit lock (not a status transition — Status never changes here), per CLAUDE.md's
+        // "Invoice edit lock" convention: a Draft invoice is the only one still editable.
         if (invoice.Status != InvoiceStatus.Draft)
         {
             throw new BadRequestException("Only Draft invoices can be edited. Cancel and recreate it instead.");

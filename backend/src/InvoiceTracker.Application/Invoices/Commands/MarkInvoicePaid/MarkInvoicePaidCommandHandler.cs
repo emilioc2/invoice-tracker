@@ -1,7 +1,9 @@
 using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.Domain.Enums;
+using InvoiceTracker.Domain.Exceptions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,19 +26,17 @@ public class MarkInvoicePaidCommandHandler : IRequestHandler<MarkInvoicePaidComm
 
         var invoice = await _dbContext.Invoices
             .Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.Id == request.Id && i.BusinessId == businessId, cancellationToken);
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "Invoice not found.", cancellationToken);
 
-        if (invoice is null)
+        try
         {
-            throw new NotFoundException("Invoice not found.");
+            invoice.TransitionTo(InvoiceStatus.Paid);
         }
-
-        if (invoice.Status is not (InvoiceStatus.Unpaid or InvoiceStatus.Overdue))
+        catch (InvalidInvoiceStatusTransitionException)
         {
             throw new BadRequestException("Only an Unpaid or Overdue invoice can be marked as Paid.");
         }
 
-        invoice.Status = InvoiceStatus.Paid;
         invoice.LastModifiedDate = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);

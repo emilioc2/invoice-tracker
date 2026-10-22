@@ -1,7 +1,9 @@
 using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.Domain.Enums;
+using InvoiceTracker.Domain.Exceptions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,21 +26,19 @@ public class CancelInvoiceCommandHandler : IRequestHandler<CancelInvoiceCommand,
 
         var invoice = await _dbContext.Invoices
             .Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.Id == request.Id && i.BusinessId == businessId, cancellationToken);
-
-        if (invoice is null)
-        {
-            throw new NotFoundException("Invoice not found.");
-        }
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "Invoice not found.", cancellationToken);
 
         // Per the status workflow: only Draft/Unpaid can be cancelled — not Overdue, and
-        // never once Paid.
-        if (invoice.Status is not (InvoiceStatus.Draft or InvoiceStatus.Unpaid))
+        // never once Paid. TransitionTo encodes this centrally (see Invoice.cs).
+        try
+        {
+            invoice.TransitionTo(InvoiceStatus.Cancelled);
+        }
+        catch (InvalidInvoiceStatusTransitionException)
         {
             throw new BadRequestException("Only a Draft or Unpaid invoice can be cancelled.");
         }
 
-        invoice.Status = InvoiceStatus.Cancelled;
         invoice.LastModifiedDate = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);

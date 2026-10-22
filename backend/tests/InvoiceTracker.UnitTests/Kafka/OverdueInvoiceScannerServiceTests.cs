@@ -53,8 +53,9 @@ public class OverdueInvoiceScannerServiceTests
         return (business, client);
     }
 
-    private static Invoice MakeInvoice(Guid businessId, Guid clientId, InvoiceStatus status, DateTime dueDate) =>
-        new()
+    private static Invoice MakeInvoice(Guid businessId, Guid clientId, InvoiceStatus status, DateTime dueDate)
+    {
+        var invoice = new Invoice
         {
             Id = Guid.NewGuid(),
             BusinessId = businessId,
@@ -63,13 +64,26 @@ public class OverdueInvoiceScannerServiceTests
             CreatedAtDate = DateTime.UtcNow.AddDays(-10),
             IssueDate = DateTime.UtcNow.AddDays(-10),
             DueDate = dueDate,
-            Status = status,
             Subtotal = 1000m,
             TaxRate = 0m,
             TaxAmount = 0m,
             Total = 1000m,
             LastModifiedDate = DateTime.UtcNow.AddDays(-10)
         };
+
+        // Status's setter is private (see Invoice.TransitionTo) — fast-forward from the default
+        // Draft to the requested starting status via legal transitions only.
+        if (status != InvoiceStatus.Draft)
+        {
+            invoice.TransitionTo(InvoiceStatus.Unpaid);
+            if (status != InvoiceStatus.Unpaid)
+            {
+                invoice.TransitionTo(status);
+            }
+        }
+
+        return invoice;
+    }
 
     [Fact]
     public async Task UnpaidInvoiceDueYesterday_FlipsToOverdue_AndWritesOutboxEntry()

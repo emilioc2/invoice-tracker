@@ -1,3 +1,4 @@
+using InvoiceTracker.Domain.Common;
 using InvoiceTracker.Domain.Enums;
 
 namespace InvoiceTracker.Domain.Entities;
@@ -6,7 +7,7 @@ namespace InvoiceTracker.Domain.Entities;
 // user store will own password storage; how that store relates to this
 // Domain/persistence table is a decision deferred to the Auth build-order
 // step (step 3), not this persistence-foundation step.
-public class User
+public class User : ITenantScopedEntity
 {
     public Guid Id { get; set; }
     public Guid BusinessId { get; set; }

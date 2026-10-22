@@ -1,5 +1,5 @@
-using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using InvoiceTracker.Application.Invoices.Common;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -25,12 +25,7 @@ public class GetInvoiceByIdQueryHandler : IRequestHandler<GetInvoiceByIdQuery, I
         var invoice = await _dbContext.Invoices
             .Include(i => i.LineItems)
             .AsNoTracking()
-            .FirstOrDefaultAsync(i => i.Id == request.Id && i.BusinessId == businessId, cancellationToken);
-
-        if (invoice is null)
-        {
-            throw new NotFoundException("Invoice not found.");
-        }
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "Invoice not found.", cancellationToken);
 
         return invoice.ToDto();
     }

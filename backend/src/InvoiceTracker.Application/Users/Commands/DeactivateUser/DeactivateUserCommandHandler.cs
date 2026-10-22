@@ -1,8 +1,8 @@
 using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using InvoiceTracker.Domain.Enums;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace InvoiceTracker.Application.Users.Commands.DeactivateUser;
 
@@ -37,12 +37,7 @@ public class DeactivateUserCommandHandler : IRequestHandler<DeactivateUserComman
         var currentUserId = _currentUserService.UserId!.Value;
 
         var targetUser = await _dbContext.BusinessUsers
-            .FirstOrDefaultAsync(u => u.Id == request.Id && u.BusinessId == businessId, cancellationToken);
-
-        if (targetUser is null)
-        {
-            throw new NotFoundException("User not found.");
-        }
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "User not found.", cancellationToken);
 
         if (targetUser.Id == currentUserId)
         {

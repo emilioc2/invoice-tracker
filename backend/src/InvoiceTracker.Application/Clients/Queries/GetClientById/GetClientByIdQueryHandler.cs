@@ -1,6 +1,6 @@
 using InvoiceTracker.Application.Clients.Common;
-using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,12 +27,7 @@ public class GetClientByIdQueryHandler : IRequestHandler<GetClientByIdQuery, Cli
 
         var client = await _dbContext.Clients
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == request.Id && c.BusinessId == businessId, cancellationToken);
-
-        if (client is null)
-        {
-            throw new NotFoundException("Client not found.");
-        }
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "Client not found.", cancellationToken);
 
         return client.ToDto();
     }

@@ -1,7 +1,6 @@
-using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace InvoiceTracker.Application.Clients.Commands.ArchiveClient;
 
@@ -25,12 +24,7 @@ public class ArchiveClientCommandHandler : IRequestHandler<ArchiveClientCommand>
         var businessId = _currentUserService.BusinessId!.Value;
 
         var client = await _dbContext.Clients
-            .FirstOrDefaultAsync(c => c.Id == request.Id && c.BusinessId == businessId, cancellationToken);
-
-        if (client is null)
-        {
-            throw new NotFoundException("Client not found.");
-        }
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "Client not found.", cancellationToken);
 
         client.ArchivedAt ??= DateTime.UtcNow;
 

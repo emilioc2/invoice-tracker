@@ -83,4 +83,108 @@ public class MultiTenancyIsolationTests : IntegrationTestBase
         var ownNotificationList = await ownNotificationResponse.Content.ReadFromJsonAsync<PaginatedResult<NotificationDto>>();
         ownNotificationList!.Items.Should().ContainSingle();
     }
+
+    /// <summary>
+    /// Covers the mutation endpoints that <c>GetForBusinessOrThrowAsync</c> now guards (see
+    /// architecture.md's "Multi-tenancy &amp; authorization" shared get-by-id helper) but that the
+    /// read-only test above doesn't touch: Client update/archive, every Invoice status-change
+    /// endpoint plus update/archive, and User deactivation. Each of these must 404 for Business B
+    /// against a resource that belongs to Business A — the tenant check has to run (and reject)
+    /// before any status-transition/edit-lock/role check gets a chance to run, so a cross-tenant
+    /// caller can't even learn that the record exists, let alone what state it's in.
+    /// </summary>
+    [Fact]
+    public async Task BusinessB_CannotMutate_BusinessA_ClientInvoiceOrUser()
+    {
+        var (clientA, _) = await RegisterBusinessAsync("tenant-a-mutate");
+        var (clientB, _) = await RegisterBusinessAsync("tenant-b-mutate");
+
+        var createClientResponse = await clientA.PostAsJsonAsync("/api/clients", new
+        {
+            Name = "Business A's Client",
+            Email = UniqueEmail("tenant-a-mutate-client"),
+            Phone = "555-2222",
+            Address = "1 Tenant A St"
+        });
+        var clientDto = (await createClientResponse.Content.ReadFromJsonAsync<ClientDto>())!;
+
+        var createStaffResponse = await clientA.PostAsJsonAsync("/api/users", new { Email = UniqueEmail("tenant-a-mutate-staff") });
+        var staffUser = (await createStaffResponse.Content.ReadFromJsonAsync<InvoiceTracker.Application.Users.Common.UserDto>())!;
+
+        async Task<InvoiceTracker.Application.Invoices.Common.InvoiceDto> CreateDraftInvoiceAsync()
+        {
+            var response = await clientA.PostAsJsonAsync("/api/invoices", new
+            {
+                ClientId = clientDto.Id,
+                DueDate = DateTime.UtcNow.AddDays(30),
+                TaxRate = 0m,
+                Notes = (string?)null,
+                LineItems = new[] { new { Description = "Tenant A work", Quantity = 1m, UnitPrice = 50m } }
+            });
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            return (await response.Content.ReadFromJsonAsync<InvoiceTracker.Application.Invoices.Common.InvoiceDto>())!;
+        }
+
+        // Client update/archive.
+        var updateClientResponse = await clientB.PutAsJsonAsync($"/api/clients/{clientDto.Id}", new
+        {
+            Name = "Hijacked",
+            Email = clientDto.Email,
+            Phone = "555-0000",
+            Address = "Nowhere"
+        });
+        updateClientResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var archiveClientResponse = await clientB.DeleteAsync($"/api/clients/{clientDto.Id}");
+        archiveClientResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // Invoice update.
+        var invoiceForUpdate = await CreateDraftInvoiceAsync();
+        var updateInvoiceResponse = await clientB.PutAsJsonAsync($"/api/invoices/{invoiceForUpdate.Id}", new
+        {
+            ClientId = clientDto.Id,
+            DueDate = DateTime.UtcNow.AddDays(60),
+            TaxRate = 0m,
+            Notes = (string?)null,
+            LineItems = new[] { new { Description = "Hijacked line item", Quantity = 1m, UnitPrice = 999m } }
+        });
+        updateInvoiceResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // Invoice status-change endpoints — each on its own fresh Draft invoice so the 404 is
+        // provably from the tenant check, not from an unrelated status/edit-lock rule.
+        var invoiceForSend = await CreateDraftInvoiceAsync();
+        var sendResponse = await clientB.PostAsync($"/api/invoices/{invoiceForSend.Id}/send", null);
+        sendResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var invoiceForMarkPaid = await CreateDraftInvoiceAsync();
+        var markPaidResponse = await clientB.PostAsync($"/api/invoices/{invoiceForMarkPaid.Id}/mark-paid", null);
+        markPaidResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var invoiceForCancel = await CreateDraftInvoiceAsync();
+        var cancelResponse = await clientB.PostAsync($"/api/invoices/{invoiceForCancel.Id}/cancel", null);
+        cancelResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // Invoice archive.
+        var invoiceForArchive = await CreateDraftInvoiceAsync();
+        var archiveInvoiceResponse = await clientB.DeleteAsync($"/api/invoices/{invoiceForArchive.Id}");
+        archiveInvoiceResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // User deactivation.
+        var deactivateUserResponse = await clientB.DeleteAsync($"/api/users/{staffUser.Id}");
+        deactivateUserResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // Sanity check: Business A itself can still exercise each of these against its own
+        // records, proving the 404s above are tenant scoping, not e.g. broken routes.
+        (await clientA.PutAsJsonAsync($"/api/clients/{clientDto.Id}", new
+        {
+            Name = "Still Business A's Client",
+            Email = clientDto.Email,
+            Phone = clientDto.Phone,
+            Address = clientDto.Address
+        })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var ownInvoice = await CreateDraftInvoiceAsync();
+        (await clientA.PostAsync($"/api/invoices/{ownInvoice.Id}/send", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await clientA.DeleteAsync($"/api/users/{staffUser.Id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
 }

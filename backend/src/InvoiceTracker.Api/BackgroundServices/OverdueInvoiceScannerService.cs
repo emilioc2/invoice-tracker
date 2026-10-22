@@ -88,7 +88,10 @@ public class OverdueInvoiceScannerService : BackgroundService
 
         foreach (var invoice in overdueInvoices)
         {
-            invoice.Status = InvoiceStatus.Overdue;
+            // Legality is centralized in Invoice.TransitionTo (see architecture.md's "Domain
+            // invariants: centralized status transitions") — this guards the only legal starting
+            // status for this transition even though the query above already filters to Unpaid.
+            invoice.TransitionTo(InvoiceStatus.Overdue);
             invoice.LastModifiedDate = now;
 
             if (!clientsById.TryGetValue(invoice.ClientId, out var client))

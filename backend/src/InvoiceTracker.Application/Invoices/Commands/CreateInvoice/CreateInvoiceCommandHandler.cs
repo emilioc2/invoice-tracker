@@ -2,7 +2,6 @@ using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
 using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.Domain.Entities;
-using InvoiceTracker.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -52,7 +51,8 @@ public class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceCommand,
             CreatedAtDate = now,
             IssueDate = null,
             DueDate = request.DueDate,
-            Status = InvoiceStatus.Draft,
+            // Status isn't set here — Invoice.Status's setter is private (see Invoice.cs); every
+            // new invoice simply starts at its default, Draft.
             Subtotal = subtotal,
             TaxRate = request.TaxRate,
             TaxAmount = taxAmount,

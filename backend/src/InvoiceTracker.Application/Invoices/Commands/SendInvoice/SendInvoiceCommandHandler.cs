@@ -1,7 +1,9 @@
 using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Persistence;
 using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.Domain.Enums;
+using InvoiceTracker.Domain.Exceptions;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,21 +26,19 @@ public class SendInvoiceCommandHandler : IRequestHandler<SendInvoiceCommand, Inv
 
         var invoice = await _dbContext.Invoices
             .Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.Id == request.Id && i.BusinessId == businessId, cancellationToken);
+            .GetForBusinessOrThrowAsync(request.Id, businessId, "Invoice not found.", cancellationToken);
 
-        if (invoice is null)
+        try
         {
-            throw new NotFoundException("Invoice not found.");
+            invoice.TransitionTo(InvoiceStatus.Unpaid);
         }
-
-        if (invoice.Status != InvoiceStatus.Draft)
+        catch (InvalidInvoiceStatusTransitionException)
         {
             throw new BadRequestException("Only Draft invoices can be sent.");
         }
 
         var now = DateTime.UtcNow;
         invoice.IssueDate = now;
-        invoice.Status = InvoiceStatus.Unpaid;
         invoice.LastModifiedDate = now;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
