@@ -25,7 +25,7 @@ public class InvoiceCrudTests : IntegrationTestBase
         {
             Name = "Invoice Test Client",
             Email = $"invoice-client-{Guid.NewGuid():N}@example.com",
-            Phone = "555-0000",
+            Phone = "5550000",
             Address = "1 Invoice Way"
         });
         var dto = (await response.Content.ReadFromJsonAsync<ClientDto>())!;

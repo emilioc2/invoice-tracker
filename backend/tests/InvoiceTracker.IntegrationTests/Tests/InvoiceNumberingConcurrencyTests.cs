@@ -31,7 +31,7 @@ public class InvoiceNumberingConcurrencyTests : IntegrationTestBase
         {
             Name = "Concurrency Test Client",
             Email = UniqueEmail("concurrency-client"),
-            Phone = "555-2222",
+            Phone = "5552222",
             Address = "1 Concurrency Ave"
         });
         var clientDto = (await createClientResponse.Content.ReadFromJsonAsync<ClientDto>())!;

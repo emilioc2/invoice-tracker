@@ -1,11 +1,12 @@
 import { z } from "zod";
 
 // Mirrors `CreateClientCommandValidator`/`UpdateClientCommandValidator` (identical rules for
-// both): Name required max 200; Email required, valid format, max 256; Phone optional max 50;
-// Address optional max 500. `phone`/`address` default to "" rather than being `undefined`-typed
-// — sending "" to the backend is equivalent to omitting them, per the handler's own
-// `?? string.Empty` coalescing, and it keeps RHF's default-values story simple (controlled
-// inputs, no undefined-vs-empty-string juggling).
+// both): Name required max 200; Email required, valid format, max 256; Phone optional, digits
+// only (no `+`, spaces, dashes, parens, or letters), max 15; Address optional max 500.
+// `phone`/`address` default to "" rather than being `undefined`-typed — sending "" to the
+// backend is equivalent to omitting them, per the handler's own `?? string.Empty` coalescing,
+// and it keeps RHF's default-values story simple (controlled inputs, no undefined-vs-empty-
+// string juggling).
 export const clientSchema = z.object({
   name: z
     .string()
@@ -16,7 +17,10 @@ export const clientSchema = z.object({
     .min(1, "Email is required.")
     .email("Enter a valid email address.")
     .max(256, "Email must be 256 characters or fewer."),
-  phone: z.string().max(50, "Phone must be 50 characters or fewer."),
+  phone: z
+    .string()
+    .max(15, "Phone must be 15 digits or fewer.")
+    .regex(/^\d*$/, "Phone must contain digits only (no spaces, dashes, +, or letters)."),
   address: z.string().max(500, "Address must be 500 characters or fewer."),
 });
 export type ClientFormValues = z.infer<typeof clientSchema>;

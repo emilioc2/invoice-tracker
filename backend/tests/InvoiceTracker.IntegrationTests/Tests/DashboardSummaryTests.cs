@@ -33,7 +33,7 @@ public class DashboardSummaryTests : IntegrationTestBase
         {
             Name = "Dashboard Test Client",
             Email = UniqueEmail("dashboard-client"),
-            Phone = "555-3333",
+            Phone = "5553333",
             Address = "1 Dashboard Blvd"
         });
         var clientDto = (await createClientResponse.Content.ReadFromJsonAsync<ClientDto>())!;

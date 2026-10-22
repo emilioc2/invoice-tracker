@@ -1,4 +1,5 @@
 using FluentValidation;
+using InvoiceTracker.Application.Common.Validation;
 
 namespace InvoiceTracker.Application.Clients.Commands.CreateClient;
 
@@ -16,7 +17,7 @@ public class CreateClientCommandValidator : AbstractValidator<CreateClientComman
             .MaximumLength(256);
 
         RuleFor(x => x.Phone)
-            .MaximumLength(50);
+            .PhoneRules();
 
         RuleFor(x => x.Address)
             .MaximumLength(500);

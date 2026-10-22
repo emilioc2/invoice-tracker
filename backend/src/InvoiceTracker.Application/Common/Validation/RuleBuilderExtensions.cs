@@ -27,6 +27,20 @@ public static class RuleBuilderExtensions
     }
 
     /// <summary>
+    /// Phone format rules shared by <c>CreateClientCommandValidator</c> and
+    /// <c>UpdateClientCommandValidator</c>: at most 15 characters, digits only (no <c>+</c>,
+    /// spaces, dashes, parentheses, or letters). Phone is optional on <c>Client</c>, so a
+    /// <c>null</c>/empty value passes -- callers add <c>NotEmpty()</c> themselves if they ever
+    /// need to require it.
+    /// </summary>
+    public static IRuleBuilderOptions<T, string?> PhoneRules<T>(this IRuleBuilder<T, string?> ruleBuilder)
+    {
+        return ruleBuilder
+            .MaximumLength(15)
+            .Matches("^[0-9]*$").WithMessage("Phone must contain digits only.");
+    }
+
+    /// <summary>
     /// Pagination bounds shared by every list query validator: <c>PageNumber</c> must be at
     /// least 1, and <c>PageSize</c> must be between 1 and 100 (inclusive).
     /// </summary>

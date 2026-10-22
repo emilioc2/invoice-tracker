@@ -19,7 +19,7 @@ public class ClientCrudTests : IntegrationTestBase
     {
         Name = name ?? "Jane Doe",
         Email = $"jane-{Guid.NewGuid():N}@example.com",
-        Phone = "555-1234",
+        Phone = "5551234",
         Address = "123 Main St"
     };
 
@@ -52,7 +52,7 @@ public class ClientCrudTests : IntegrationTestBase
         {
             Name = "New Name",
             Email = created.Email,
-            Phone = "555-9999",
+            Phone = "5559999",
             Address = "456 Updated Ave"
         });
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -60,7 +60,7 @@ public class ClientCrudTests : IntegrationTestBase
         var getResponse = await client.GetAsync($"/api/clients/{created.Id}");
         var fetched = await getResponse.Content.ReadFromJsonAsync<ClientDto>();
         fetched!.Name.Should().Be("New Name");
-        fetched.Phone.Should().Be("555-9999");
+        fetched.Phone.Should().Be("5559999");
     }
 
     [Fact]

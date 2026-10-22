@@ -27,7 +27,7 @@ public class PdfExportTests : IntegrationTestBase
         {
             Name = "PDF Test Client",
             Email = UniqueEmail("pdf-client"),
-            Phone = "555-4444",
+            Phone = "5554444",
             Address = "1 PDF Place"
         });
         var clientDto = (await createClientResponse.Content.ReadFromJsonAsync<ClientDto>())!;

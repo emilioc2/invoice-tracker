@@ -1,4 +1,5 @@
 using FluentValidation;
+using InvoiceTracker.Application.Common.Validation;
 
 namespace InvoiceTracker.Application.Clients.Commands.UpdateClient;
 
@@ -19,7 +20,7 @@ public class UpdateClientCommandValidator : AbstractValidator<UpdateClientComman
             .MaximumLength(256);
 
         RuleFor(x => x.Phone)
-            .MaximumLength(50);
+            .PhoneRules();
 
         RuleFor(x => x.Address)
             .MaximumLength(500);

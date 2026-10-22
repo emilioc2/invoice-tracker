@@ -40,7 +40,7 @@ public class MultiTenancyIsolationTests : IntegrationTestBase
         {
             Name = "Business A's Client",
             Email = UniqueEmail("tenant-a-client"),
-            Phone = "555-1111",
+            Phone = "5551111",
             Address = "1 Tenant A St"
         });
         var clientDto = (await createClientResponse.Content.ReadFromJsonAsync<ClientDto>())!;
@@ -103,7 +103,7 @@ public class MultiTenancyIsolationTests : IntegrationTestBase
         {
             Name = "Business A's Client",
             Email = UniqueEmail("tenant-a-mutate-client"),
-            Phone = "555-2222",
+            Phone = "5552222",
             Address = "1 Tenant A St"
         });
         var clientDto = (await createClientResponse.Content.ReadFromJsonAsync<ClientDto>())!;
@@ -130,7 +130,7 @@ public class MultiTenancyIsolationTests : IntegrationTestBase
         {
             Name = "Hijacked",
             Email = clientDto.Email,
-            Phone = "555-0000",
+            Phone = "5550000",
             Address = "Nowhere"
         });
         updateClientResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
