@@ -40,10 +40,10 @@ export function useUpdateClientMutation(id: string) {
   });
 }
 
-export function useArchiveClientMutation() {
+export function useRemoveClientMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => clientsApi.archive(id),
+    mutationFn: (id: string) => clientsApi.remove(id),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       queryClient.invalidateQueries({ queryKey: ["clients", id] });

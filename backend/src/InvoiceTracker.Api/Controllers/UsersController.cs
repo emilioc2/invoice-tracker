@@ -1,5 +1,6 @@
 using InvoiceTracker.Application.Users.Commands.CreateStaffUser;
 using InvoiceTracker.Application.Users.Commands.DeactivateUser;
+using InvoiceTracker.Application.Users.Commands.ReactivateUser;
 using InvoiceTracker.Application.Users.Common;
 using InvoiceTracker.Application.Users.Queries.ListUsers;
 using MediatR;
@@ -46,6 +47,14 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
     {
         await _mediator.Send(new DeactivateUserCommand(id), cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("{id:guid}/reactivate")]
+    [Authorize(Roles = "Owner")]
+    public async Task<IActionResult> Reactivate(Guid id, CancellationToken cancellationToken)
+    {
+        await _mediator.Send(new ReactivateUserCommand(id), cancellationToken);
         return NoContent();
     }
 }

@@ -16,7 +16,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
-import { useCreateStaffUserMutation, useDeactivateUserMutation, useUsersQuery } from "@/hooks/useUsers";
+import {
+  useCreateStaffUserMutation,
+  useDeactivateUserMutation,
+  useReactivateUserMutation,
+  useUsersQuery,
+} from "@/hooks/useUsers";
 import { applyApiErrorToForm } from "@/lib/apiErrors";
 import { createStaffUserSchema, type CreateStaffUserFormValues } from "@/schemas/userSchema";
 import type { User } from "@/types/auth";
@@ -50,10 +55,12 @@ export function UsersPage() {
   const [addSuccessMessage, setAddSuccessMessage] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<User | null>(null);
   const [deactivateError, setDeactivateError] = useState<string | null>(null);
+  const [reactivateError, setReactivateError] = useState<string | null>(null);
 
   const { data: users, isLoading, isError } = useUsersQuery();
   const createMutation = useCreateStaffUserMutation();
   const deactivateMutation = useDeactivateUserMutation();
+  const reactivateMutation = useReactivateUserMutation();
 
   const form = useForm<CreateStaffUserFormValues>({
     resolver: zodResolver(createStaffUserSchema),
@@ -88,7 +95,22 @@ export function UsersPage() {
   // isn't an Owner AND the target is currently active — predicting the backend's own rejection
   // rules (`DeactivateUserCommandHandler`) rather than letting the user click and get a 400.
   const canDeactivate = (target: User): boolean =>
-    isOwner && target.id !== currentUser?.userId && target.role !== "Owner" && target.isActive;
+    isOwner && target.id !== currentUser?.userId && target.role !== "Owner" && target.status === "Active";
+
+  // Mirrors `canDeactivate`, predicting `ReactivateUserCommandHandler`'s own rejection rules. No
+  // "can't target yourself" check needed: an Owner's own Status is always Active (an Owner can
+  // never be deactivated in the first place), so this path never applies to the viewer themself.
+  const canReactivate = (target: User): boolean =>
+    isOwner && target.role !== "Owner" && target.status === "Deactivated";
+
+  const handleReactivate = async (target: User) => {
+    setReactivateError(null);
+    try {
+      await reactivateMutation.mutateAsync(target.id);
+    } catch (error) {
+      setReactivateError(extractErrorTitle(error));
+    }
+  };
 
   const columns: DataTableColumn<User>[] = [
     { key: "email", header: "Email", cell: (u) => u.email },
@@ -97,30 +119,46 @@ export function UsersPage() {
       key: "status",
       header: "Status",
       cell: (u) => (
-        <Badge variant={u.isActive ? "default" : "secondary"}>
-          {u.isActive ? "Active" : "Inactive"}
-        </Badge>
+        <Badge variant={u.status === "Active" ? "default" : "secondary"}>{u.status}</Badge>
       ),
     },
     {
       key: "actions",
       header: "",
       className: "w-10 text-right",
-      cell: (u) =>
-        canDeactivate(u) ? (
-          <div className="text-right">
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                setDeactivateError(null);
-                setDeactivateTarget(u);
-              }}
-            >
-              Deactivate
-            </Button>
-          </div>
-        ) : null,
+      cell: (u) => {
+        if (canDeactivate(u)) {
+          return (
+            <div className="text-right">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  setDeactivateError(null);
+                  setDeactivateTarget(u);
+                }}
+              >
+                Deactivate
+              </Button>
+            </div>
+          );
+        }
+        if (canReactivate(u)) {
+          return (
+            <div className="text-right">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={reactivateMutation.isPending}
+                onClick={() => handleReactivate(u)}
+              >
+                Reactivate
+              </Button>
+            </div>
+          );
+        }
+        return null;
+      },
     },
   ];
 
@@ -152,6 +190,13 @@ export function UsersPage() {
         <Alert variant="destructive">
           <AlertTitle>Unable to deactivate user</AlertTitle>
           <AlertDescription>{deactivateError}</AlertDescription>
+        </Alert>
+      )}
+
+      {reactivateError && (
+        <Alert variant="destructive">
+          <AlertTitle>Unable to reactivate user</AlertTitle>
+          <AlertDescription>{reactivateError}</AlertDescription>
         </Alert>
       )}
 

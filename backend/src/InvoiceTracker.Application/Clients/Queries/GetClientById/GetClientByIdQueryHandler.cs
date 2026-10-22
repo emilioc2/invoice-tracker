@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace InvoiceTracker.Application.Clients.Queries.GetClientById;
 
 /// <summary>
-/// Returns a client regardless of <c>ArchivedAt</c> — archiving only hides a client from the
+/// Returns a client regardless of <c>Status</c> - removing only hides a client from the
 /// default list (see <c>ListClientsQueryHandler</c>), it doesn't make a direct-by-id lookup 404.
 /// </summary>
 public class GetClientByIdQueryHandler : IRequestHandler<GetClientByIdQuery, ClientDto>

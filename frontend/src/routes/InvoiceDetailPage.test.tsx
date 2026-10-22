@@ -25,7 +25,8 @@ const BASE_CLIENT = {
   address: "",
   createdAtDate: "2026-01-01T00:00:00Z",
   lastModifiedDate: "2026-01-01T00:00:00Z",
-  archivedAt: null,
+  status: "Active",
+  statusChangedAt: "2026-01-01T00:00:00Z",
 };
 
 function buildInvoice(overrides: Partial<Invoice> = {}): Invoice {

@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { useArchiveClientMutation, useClientsQuery, useCreateClientMutation } from "@/hooks/useClients";
+import { useClientsQuery, useCreateClientMutation, useRemoveClientMutation } from "@/hooks/useClients";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import type { Client } from "@/types/client";
 
@@ -31,7 +31,7 @@ export function ClientsListPage() {
   const [search, setSearch] = useState("");
   const [pageNumber, setPageNumber] = useState(1);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [archiveTarget, setArchiveTarget] = useState<Client | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Client | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, 300);
 
@@ -42,7 +42,7 @@ export function ClientsListPage() {
   });
 
   const createMutation = useCreateClientMutation();
-  const archiveMutation = useArchiveClientMutation();
+  const removeMutation = useRemoveClientMutation();
 
   const columns: DataTableColumn<Client>[] = [
     { key: "name", header: "Name", cell: (client) => client.name },
@@ -66,9 +66,9 @@ export function ClientsListPage() {
               </DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
-                onSelect={() => setArchiveTarget(client)}
+                onSelect={() => setRemoveTarget(client)}
               >
-                Archive
+                Remove
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -142,22 +142,22 @@ export function ClientsListPage() {
       </Dialog>
 
       <ConfirmDialog
-        open={!!archiveTarget}
+        open={!!removeTarget}
         onOpenChange={(open) => {
-          if (!open) setArchiveTarget(null);
+          if (!open) setRemoveTarget(null);
         }}
-        title="Archive client?"
+        title="Remove client?"
         description={
-          archiveTarget
-            ? `"${archiveTarget.name}" will be hidden from this list. This can't be undone from here.`
+          removeTarget
+            ? `"${removeTarget.name}" will be hidden from this list. This can't be undone from here.`
             : ""
         }
-        confirmLabel="Archive"
-        isConfirming={archiveMutation.isPending}
+        confirmLabel="Remove"
+        isConfirming={removeMutation.isPending}
         onConfirm={async () => {
-          if (!archiveTarget) return;
-          await archiveMutation.mutateAsync(archiveTarget.id);
-          setArchiveTarget(null);
+          if (!removeTarget) return;
+          await removeMutation.mutateAsync(removeTarget.id);
+          setRemoveTarget(null);
         }}
       />
     </div>

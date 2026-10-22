@@ -7,7 +7,7 @@ using InvoiceTracker.IntegrationTests.Infrastructure;
 
 namespace InvoiceTracker.IntegrationTests.Tests;
 
-/// <summary>Client CRUD, including the archive-not-delete behavior (requirements.md's soft-delete rule).</summary>
+/// <summary>Client CRUD, including the remove-not-delete behavior (requirements.md's soft-delete rule, via `ClientStatus.Removed`).</summary>
 [Collection(IntegrationTestCollection.Name)]
 public class ClientCrudTests : IntegrationTestBase
 {
@@ -64,40 +64,42 @@ public class ClientCrudTests : IntegrationTestBase
     }
 
     [Fact]
-    public async Task Archive_HidesFromDefaultList_ButRecordStillExists()
+    public async Task Remove_HidesFromDefaultList_ButRecordStillExists()
     {
-        var (client, _) = await RegisterBusinessAsync("client-archive");
+        var (client, _) = await RegisterBusinessAsync("client-remove");
 
-        var createResponse = await client.PostAsJsonAsync("/api/clients", NewClientRequest("To Be Archived"));
+        var createResponse = await client.PostAsJsonAsync("/api/clients", NewClientRequest("To Be Removed"));
         var created = (await createResponse.Content.ReadFromJsonAsync<ClientDto>())!;
 
-        var archiveResponse = await client.DeleteAsync($"/api/clients/{created.Id}");
-        archiveResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var removeResponse = await client.DeleteAsync($"/api/clients/{created.Id}");
+        removeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         // Hidden from the default list...
         var listResponse = await client.GetAsync("/api/clients?pageSize=100");
         var list = await listResponse.Content.ReadFromJsonAsync<PaginatedResult<ClientDto>>();
         list!.Items.Should().NotContain(c => c.Id == created.Id);
 
-        // ...but not actually deleted: direct-by-id lookup still finds it, now with ArchivedAt set.
+        // ...but not actually deleted: direct-by-id lookup still finds it, now with
+        // Status = Removed and a fresh StatusChangedAt.
         var getResponse = await client.GetAsync($"/api/clients/{created.Id}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var fetched = await getResponse.Content.ReadFromJsonAsync<ClientDto>();
-        fetched!.ArchivedAt.Should().NotBeNull();
+        fetched!.Status.Should().Be("Removed");
+        fetched.StatusChangedAt.Should().BeOnOrAfter(created.StatusChangedAt);
     }
 
     [Fact]
-    public async Task Archive_IsIdempotent()
+    public async Task Remove_IsIdempotent()
     {
-        var (client, _) = await RegisterBusinessAsync("client-archive-twice");
+        var (client, _) = await RegisterBusinessAsync("client-remove-twice");
 
         var createResponse = await client.PostAsJsonAsync("/api/clients", NewClientRequest());
         var created = (await createResponse.Content.ReadFromJsonAsync<ClientDto>())!;
 
-        var firstArchive = await client.DeleteAsync($"/api/clients/{created.Id}");
-        var secondArchive = await client.DeleteAsync($"/api/clients/{created.Id}");
+        var firstRemove = await client.DeleteAsync($"/api/clients/{created.Id}");
+        var secondRemove = await client.DeleteAsync($"/api/clients/{created.Id}");
 
-        firstArchive.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        secondArchive.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        firstRemove.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        secondRemove.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 }

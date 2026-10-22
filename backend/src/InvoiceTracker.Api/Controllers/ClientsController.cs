@@ -1,5 +1,5 @@
-using InvoiceTracker.Application.Clients.Commands.ArchiveClient;
 using InvoiceTracker.Application.Clients.Commands.CreateClient;
+using InvoiceTracker.Application.Clients.Commands.RemoveClient;
 using InvoiceTracker.Application.Clients.Commands.UpdateClient;
 using InvoiceTracker.Application.Clients.Common;
 using InvoiceTracker.Application.Clients.Queries.GetClientById;
@@ -61,9 +61,9 @@ public class ClientsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> Archive(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Remove(Guid id, CancellationToken cancellationToken)
     {
-        await _mediator.Send(new ArchiveClientCommand(id), cancellationToken);
+        await _mediator.Send(new RemoveClientCommand(id), cancellationToken);
         return NoContent();
     }
 }

@@ -8,4 +8,5 @@ public record ClientDto(
     string Address,
     DateTime CreatedAtDate,
     DateTime LastModifiedDate,
-    DateTime? ArchivedAt);
+    string Status,
+    DateTime StatusChangedAt);

@@ -21,7 +21,7 @@ const EMPTY_INVOICES: PaginatedResult<Invoice> = {
 
 const EMPTY_CLIENTS = {
   items: [
-    { id: "client-1", name: "Acme Co", email: "a@acme.test", phone: "", address: "", createdAtDate: "2026-01-01T00:00:00Z", lastModifiedDate: "2026-01-01T00:00:00Z", archivedAt: null },
+    { id: "client-1", name: "Acme Co", email: "a@acme.test", phone: "", address: "", createdAtDate: "2026-01-01T00:00:00Z", lastModifiedDate: "2026-01-01T00:00:00Z", status: "Active", statusChangedAt: "2026-01-01T00:00:00Z" },
   ],
   totalCount: 1,
   pageNumber: 1,

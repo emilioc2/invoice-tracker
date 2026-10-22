@@ -48,7 +48,7 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
             BusinessId = businessId,
             Email = request.Email,
             Role = UserRole.Staff,
-            IsActive = true,
+            // Status defaults to UserStatus.Active via the entity's own default initializer.
             // Must be changed via ChangePasswordCommandHandler before this Staff user gets normal
             // access — see architecture.md's "Forced password change for temp-password logins".
             MustChangePassword = true

@@ -24,7 +24,6 @@ public class ChangePasswordCommandHandlerTests
         BusinessId = businessId,
         Email = "staff@example.com",
         Role = UserRole.Staff,
-        IsActive = true,
         MustChangePassword = mustChangePassword
     };
 

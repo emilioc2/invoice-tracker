@@ -15,7 +15,14 @@ export function create(email: string): Promise<User> {
 }
 
 // Owner-only. Backend rejects deactivating yourself or any Owner with a plain `400 { title }` —
-// the UI predicts both cases and hides the action before the user can even click it.
+// the UI predicts both cases and hides the action before the user can even click it. Internally
+// calls the backend's guarded `User.TransitionTo(Deactivated)` (Active -> Deactivated).
 export function deactivate(id: string): Promise<void> {
   return apiFetch<void>(`/api/users/${id}`, { method: "DELETE" });
+}
+
+// Owner-only. Reverses a previous deactivation (Deactivated -> Active) via the backend's guarded
+// `User.TransitionTo(Active)` — new in this slice, unlike Client's one-way Remove.
+export function reactivate(id: string): Promise<void> {
+  return apiFetch<void>(`/api/users/${id}/reactivate`, { method: "POST" });
 }

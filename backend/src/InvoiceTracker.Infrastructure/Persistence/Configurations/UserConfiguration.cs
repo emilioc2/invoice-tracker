@@ -21,9 +21,13 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasConversion<string>()
             .HasMaxLength(20);
 
-        builder.Property(u => u.IsActive)
+        builder.Property(u => u.Status)
             .IsRequired()
-            .HasDefaultValue(true);
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
+        builder.Property(u => u.StatusChangedAt)
+            .IsRequired();
 
         builder.Property(u => u.MustChangePassword)
             .IsRequired()

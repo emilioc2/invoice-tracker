@@ -4,6 +4,9 @@ using FluentAssertions;
 using InvoiceTracker.Application.Auth.Common;
 using InvoiceTracker.Application.Users.Common;
 using InvoiceTracker.IntegrationTests.Infrastructure;
+using InvoiceTracker.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace InvoiceTracker.IntegrationTests.Tests;
 
@@ -40,7 +43,7 @@ public class RoleAuthorizationTests : IntegrationTestBase
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var staffUser = await response.Content.ReadFromJsonAsync<UserDto>();
         staffUser!.Role.Should().Be("Staff");
-        staffUser.IsActive.Should().BeTrue();
+        staffUser.Status.Should().Be("Active");
     }
 
     [Fact]
@@ -97,6 +100,125 @@ public class RoleAuthorizationTests : IntegrationTestBase
 
         var listResponse = await ownerClient.GetAsync("/api/users");
         var users = await listResponse.Content.ReadFromJsonAsync<List<UserDto>>();
-        users!.Single(u => u.Id == staffUser.Id).IsActive.Should().BeFalse();
+        users!.Single(u => u.Id == staffUser.Id).Status.Should().Be("Deactivated");
+    }
+
+    [Fact]
+    public async Task Owner_CanReactivateDeactivatedStaffUser_AndTheyCanLoginAgain()
+    {
+        var (ownerClient, _, staffUser) = await RegisterBusinessWithStaffAsync("role-owner-reactivate-staff");
+
+        var deactivateResponse = await ownerClient.DeleteAsync($"/api/users/{staffUser.Id}");
+        deactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var reactivateResponse = await ownerClient.PostAsync($"/api/users/{staffUser.Id}/reactivate", null);
+        reactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var listResponse = await ownerClient.GetAsync("/api/users");
+        var users = await listResponse.Content.ReadFromJsonAsync<List<UserDto>>();
+        users!.Single(u => u.Id == staffUser.Id).Status.Should().Be("Active");
+
+        // ...and the reactivated Staff user can actually log back in (reset password via the
+        // forgot-password flow, same recovery mechanism RoleAuthorizationTests already uses
+        // elsewhere, since we never captured the original temp password).
+        var staffClient = CreateClient();
+        await staffClient.PostAsJsonAsync("/api/auth/forgot-password", new { Email = staffUser.Email });
+        var sentEmail = Factory.EmailSender.FindLatestTo(staffUser.Email);
+        sentEmail.Should().NotBeNull();
+        var token = System.Text.RegularExpressions.Regex.Match(sentEmail!.Body, "password: (?<token>.+)$").Groups["token"].Value;
+
+        const string staffPassword = "ReactivatedP@ss123!";
+        var resetResponse = await staffClient.PostAsJsonAsync("/api/auth/reset-password", new
+        {
+            Email = staffUser.Email,
+            Token = token,
+            NewPassword = staffPassword
+        });
+        resetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var loginResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffUser.Email, Password = staffPassword });
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var staffAuth = await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>();
+        staffAuth!.Role.Should().Be("Staff");
+    }
+
+    [Fact]
+    public async Task Staff_CannotReactivateUsers_Returns403()
+    {
+        var (ownerClient, _, staffUser) = await RegisterBusinessWithStaffAsync("role-staff-reactivate-forbidden");
+
+        var deactivateResponse = await ownerClient.DeleteAsync($"/api/users/{staffUser.Id}");
+        deactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Reactivate the Staff user so they can log back in and attempt the forbidden call
+        // themselves (rather than asserting against some other Staff account).
+        var secondReactivate = await ownerClient.PostAsync($"/api/users/{staffUser.Id}/reactivate", null);
+        secondReactivate.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var staffClient = CreateClient();
+        await staffClient.PostAsJsonAsync("/api/auth/forgot-password", new { Email = staffUser.Email });
+        var sentEmail = Factory.EmailSender.FindLatestTo(staffUser.Email);
+        var token = System.Text.RegularExpressions.Regex.Match(sentEmail!.Body, "password: (?<token>.+)$").Groups["token"].Value;
+
+        const string staffPassword = "StaffReactivate@123!";
+        await staffClient.PostAsJsonAsync("/api/auth/reset-password", new
+        {
+            Email = staffUser.Email,
+            Token = token,
+            NewPassword = staffPassword
+        });
+
+        var loginResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffUser.Email, Password = staffPassword });
+        var staffAuth = (await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>())!;
+        Authorize(staffClient, staffAuth.AccessToken);
+
+        // Deactivate once more so there's something to (attempt to) reactivate as Staff.
+        await ownerClient.DeleteAsync($"/api/users/{staffUser.Id}");
+
+        var reactivateAttempt = await staffClient.PostAsync($"/api/users/{staffUser.Id}/reactivate", null);
+
+        reactivateAttempt.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Reactivating_AnAlreadyActiveUser_IsIdempotent()
+    {
+        var (ownerClient, _, staffUser) = await RegisterBusinessWithStaffAsync("role-reactivate-idempotent");
+
+        // Staff user is already Active (never deactivated) — reactivating is a no-op success.
+        var reactivateResponse = await ownerClient.PostAsync($"/api/users/{staffUser.Id}/reactivate", null);
+
+        reactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var listResponse = await ownerClient.GetAsync("/api/users");
+        var users = await listResponse.Content.ReadFromJsonAsync<List<UserDto>>();
+        users!.Single(u => u.Id == staffUser.Id).Status.Should().Be("Active");
+    }
+
+    /// <summary>
+    /// ReactivateUserCommandHandler's "target is an Owner" guard should be unreachable through the
+    /// real HTTP API — DeactivateUserCommandHandler already refuses to deactivate any Owner (both
+    /// self and otherwise), so no code path should ever produce a Deactivated Owner row to
+    /// reactivate in the first place. Per the QA task's instruction to "construct that scenario if
+    /// you can," this test does so anyway by writing directly to the Owner's row via raw SQL,
+    /// bypassing <c>User.TransitionTo</c>'s own guard (which would never allow this) — proving the
+    /// defensive check in <c>ReactivateUserCommandHandler</c> genuinely fires rather than relying on
+    /// it being merely "probably fine."
+    /// </summary>
+    [Fact]
+    public async Task ReactivatingAnOwner_Returns400_EvenThoughThisShouldBeUnreachableInNormalUse()
+    {
+        var (ownerClient, ownerAuth) = await RegisterBusinessAsync("role-reactivate-owner-guard");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE \"Users\" SET \"Status\" = 'Deactivated' WHERE \"Id\" = {ownerAuth.UserId}");
+        }
+
+        var reactivateResponse = await ownerClient.PostAsync($"/api/users/{ownerAuth.UserId}/reactivate", null);
+
+        reactivateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

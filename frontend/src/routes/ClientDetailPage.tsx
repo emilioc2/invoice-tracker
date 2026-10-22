@@ -11,17 +11,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ApiError } from "@/api/client";
-import { useArchiveClientMutation, useClientQuery, useUpdateClientMutation } from "@/hooks/useClients";
+import { useClientQuery, useRemoveClientMutation, useUpdateClientMutation } from "@/hooks/useClients";
 
 export function ClientDetailPage() {
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [isRemoveOpen, setIsRemoveOpen] = useState(false);
 
   const { data: client, isLoading, error } = useClientQuery(clientId);
   const updateMutation = useUpdateClientMutation(clientId ?? "");
-  const archiveMutation = useArchiveClientMutation();
+  const removeMutation = useRemoveClientMutation();
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
@@ -47,22 +47,22 @@ export function ClientDetailPage() {
     );
   }
 
-  const isArchived = !!client.archivedAt;
+  const isRemoved = client.status === "Removed";
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">{client.name}</h1>
-          {isArchived && <Badge variant="secondary">Archived</Badge>}
+          {isRemoved && <Badge variant="secondary">Removed</Badge>}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setIsEditOpen(true)}>
             Edit
           </Button>
-          {!isArchived && (
-            <Button variant="destructive" onClick={() => setIsArchiveOpen(true)}>
-              Archive
+          {!isRemoved && (
+            <Button variant="destructive" onClick={() => setIsRemoveOpen(true)}>
+              Remove
             </Button>
           )}
         </div>
@@ -89,10 +89,10 @@ export function ClientDetailPage() {
           <dt className="text-sm text-muted-foreground">Last modified</dt>
           <dd className="text-sm">{new Date(client.lastModifiedDate).toLocaleString()}</dd>
         </div>
-        {isArchived && client.archivedAt && (
+        {isRemoved && (
           <div>
-            <dt className="text-sm text-muted-foreground">Archived</dt>
-            <dd className="text-sm">{new Date(client.archivedAt).toLocaleString()}</dd>
+            <dt className="text-sm text-muted-foreground">Removed</dt>
+            <dd className="text-sm">{new Date(client.statusChangedAt).toLocaleString()}</dd>
           </div>
         )}
       </dl>
@@ -115,15 +115,15 @@ export function ClientDetailPage() {
       </Dialog>
 
       <ConfirmDialog
-        open={isArchiveOpen}
-        onOpenChange={setIsArchiveOpen}
-        title="Archive client?"
+        open={isRemoveOpen}
+        onOpenChange={setIsRemoveOpen}
+        title="Remove client?"
         description={`"${client.name}" will be hidden from the clients list. This can't be undone from here.`}
-        confirmLabel="Archive"
-        isConfirming={archiveMutation.isPending}
+        confirmLabel="Remove"
+        isConfirming={removeMutation.isPending}
         onConfirm={async () => {
-          await archiveMutation.mutateAsync(client.id);
-          setIsArchiveOpen(false);
+          await removeMutation.mutateAsync(client.id);
+          setIsRemoveOpen(false);
         }}
       />
     </div>

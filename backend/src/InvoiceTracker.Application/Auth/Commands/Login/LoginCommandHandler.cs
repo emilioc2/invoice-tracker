@@ -1,6 +1,7 @@
 using InvoiceTracker.Application.Auth.Common;
 using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
@@ -37,7 +38,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResultDto>
 
         // Credentials matched the Identity store but there's no correlated (active) Domain User
         // row — treat identically to a bad password rather than leaking which part failed.
-        if (user is null || !user.IsActive)
+        if (user is null || user.Status != UserStatus.Active)
         {
             throw new AuthenticationFailedException(InvalidCredentialsMessage);
         }

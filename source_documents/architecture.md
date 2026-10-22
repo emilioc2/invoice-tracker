@@ -11,7 +11,7 @@ backend/
 ├── src/
 │   ├── InvoiceTracker.Domain/              # Entities, enums, domain logic — zero external dependencies
 │   │   ├── Entities/                       # Business, User, Client, Invoice, InvoiceLineItem, Notification
-│   │   ├── Enums/                          # InvoiceStatus (Draft/Unpaid/Paid/Overdue/Cancelled), UserRole (Owner/Staff), NotificationType (OverdueReminder/InvoiceSent)
+│   │   ├── Enums/                          # InvoiceStatus (Draft/Unpaid/Paid/Overdue/Cancelled), ClientStatus (Active/Removed), UserStatus (Active/Deactivated), UserRole (Owner/Staff), NotificationType (OverdueReminder/InvoiceSent)
 │   │   └── Events/                         # InvoiceOverdueEvent (the Kafka payload's domain-side shape)
 │   ├── InvoiceTracker.Application/          # Use cases + ports (interfaces), DTOs, validation
 │   │   ├── Common/
@@ -24,7 +24,7 @@ backend/
 │   │   │   ├── Commands/
 │   │   │   │   ├── CreateClient/           # CreateClientCommand.cs, CreateClientCommandHandler.cs, CreateClientCommandValidator.cs
 │   │   │   │   ├── UpdateClient/
-│   │   │   │   └── ArchiveClient/
+│   │   │   │   └── RemoveClient/
 │   │   │   └── Queries/
 │   │   │       ├── GetClientById/
 │   │   │       └── ListClients/
@@ -44,7 +44,7 @@ backend/
 │   │   ├── Notifications/
 │   │   │   └── Queries/ListNotifications/
 │   │   ├── Users/
-│   │   │   ├── Commands/ CreateStaffUser/, DeactivateUser/
+│   │   │   ├── Commands/ CreateStaffUser/, DeactivateUser/, ReactivateUser/
 │   │   │   └── Queries/ListUsers/
 │   │   └── Auth/
 │   │       └── Commands/ Register/, Login/, ForgotPassword/, ResetPassword/
@@ -67,11 +67,17 @@ backend/
 
 **UI display note:** the `UserRole.Owner` enum value shown above (and the `"Owner"` string persisted in the `Users.Role` column) is unchanged. The frontend now displays this role to end users as "Admin" — a presentation-layer label only, implemented entirely in frontend display strings. Every other reference to "Owner" in this document (API routes, role checks, test plan, etc.) refers to this same internal/persisted value.
 
-**Indexing:** given the deliberately tight hosting budget (a single `t3.micro`), `Invoices` should carry a composite index on `(BusinessId, Status, DueDate)` — it's hit by the overdue scanner's periodic query, the filtered invoice list endpoint, and the dashboard summary. `Clients` and `Invoices` should also both index `(BusinessId, ArchivedAt)` since every list query filters on both.
+**Indexing:** given the deliberately tight hosting budget (a single `t3.micro`), `Invoices` should carry a composite index on `(BusinessId, Status, DueDate)` — it's hit by the overdue scanner's periodic query, the filtered invoice list endpoint, and the dashboard summary. `Clients` should index `(BusinessId, Status)` since every client list query filters on both. `Invoices` should additionally index `(BusinessId, ArchivedAt)` — Invoice's `ArchivedAt` remains separate from its `Status` workflow (see the domain invariants section below), so it needs its own index rather than being covered by the `(BusinessId, Status, DueDate)` index above.
 
 ## Domain invariants: centralized status transitions
 
-The `Invoice` entity owns its own status machine. All status changes (`Draft→Unpaid`, `Unpaid→Overdue`, `Unpaid/Overdue→Paid`, `Draft/Unpaid→Cancelled` — per `requirements.md`'s status workflow) must go through a single domain method on `Invoice` (e.g. `TransitionTo(InvoiceStatus target)`) that internally guards which transitions are legal and rejects the rest. Command handlers (`SendInvoiceCommandHandler`, `MarkInvoicePaidCommandHandler`, `CancelInvoiceCommandHandler`) and `OverdueInvoiceScannerService` call this one method rather than each independently re-implementing "is this transition legal" checks. This keeps the workflow's rules in exactly one place instead of hand-duplicated across every caller, where they could otherwise silently drift out of sync.
+Every entity with a lifecycle — `Invoice`, `Client`, and `User` — owns its own status machine via a single guarded domain method, `TransitionTo(TStatus target)`, that internally checks which transitions are legal from the entity's current status and rejects the rest. This is a project-wide convention, not an Invoice-specific one: command handlers and background services call this one method on the relevant entity rather than each independently re-implementing "is this transition legal" checks, which keeps each workflow's rules in exactly one place instead of hand-duplicated across every caller, where they could otherwise silently drift out of sync. Each entity's `Status` property setter is private — the only way to change it is through `TransitionTo`.
+
+- **`Invoice.TransitionTo(InvoiceStatus target)`** — status changes (`Draft→Unpaid`, `Unpaid→Overdue`, `Unpaid/Overdue→Paid`, `Draft/Unpaid→Cancelled` — per `requirements.md`'s status workflow) are called from `SendInvoiceCommandHandler`, `MarkInvoicePaidCommandHandler`, `CancelInvoiceCommandHandler`, and `OverdueInvoiceScannerService`. Invoice's `ArchivedAt` (nullable timestamp) remains a separate, orthogonal concept from `Status` — archiving an invoice doesn't change where it sits in the Draft/Unpaid/Overdue/Paid/Cancelled workflow, so it is deliberately *not* folded into this transition machinery.
+- **`Client.TransitionTo(ClientStatus target)`** — `ClientStatus` is `{ Active, Removed }`. The only legal transition is `Active → Removed` (user-facing "Remove"); there is no reverse transition — a removed client cannot currently be restored. Called from `RemoveClientCommandHandler`, replacing the former bare `client.ArchivedAt ??= DateTime.UtcNow` assignment.
+- **`User.TransitionTo(UserStatus target)`** — `UserStatus` is `{ Active, Deactivated }`. Both directions are legal: `Active → Deactivated` (deactivate) and `Deactivated → Active` (reactivate). Called from `DeactivateUserCommandHandler` and the new `ReactivateUserCommandHandler`, replacing the former bare boolean flip on `IsActive`.
+
+`Client` and `User` each also gain a `StatusChangedAt` column (`DateTime`, non-nullable), set by `TransitionTo` on every transition — kept separate from `LastModifiedDate`, which already exists on `Client` and bumps on any field edit, not specifically a status change, so it can't be relied on to answer "when did this entity's status last change."
 
 ## Request handling pattern: CQRS via MediatR
 
@@ -145,7 +151,8 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 |---|---|---|
 | GET | `/api/users` | List users in the caller's business — any authenticated user |
 | POST | `/api/users` | Owner creates a Staff user (emails a temp password) |
-| DELETE | `/api/users/{id}` | Owner deactivates a Staff user (sets `IsActive = false`), blocking future logins. An Owner cannot deactivate their own account — rejected with `400`. Note: this does not revoke a JWT already issued to the deactivated user — see `requirements.md`'s Auth row for this accepted limitation |
+| DELETE | `/api/users/{id}` | Owner deactivates a Staff user — calls `User.TransitionTo(UserStatus.Deactivated)`, blocking future logins. An Owner cannot deactivate their own account — rejected with `400`. Note: this does not revoke a JWT already issued to the deactivated user — see `requirements.md`'s Auth row for this accepted limitation |
+| POST | `/api/users/{id}/reactivate` | Owner reactivates a previously deactivated Staff user — calls `User.TransitionTo(UserStatus.Active)`, restoring their ability to log in |
 
 ### Clients
 | Method | Route | Notes |
@@ -154,7 +161,7 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 | GET | `/api/clients/{id}` | Single client |
 | POST | `/api/clients` | Create |
 | PUT | `/api/clients/{id}` | Update |
-| DELETE | `/api/clients/{id}` | Archives (sets `ArchivedAt`), not a hard delete |
+| DELETE | `/api/clients/{id}` | Removes the client — calls `Client.TransitionTo(ClientStatus.Removed)`, not a hard delete. Keeping `DELETE` as the verb matches Invoice's existing archive-via-`DELETE` pattern, even though neither is a literal hard delete |
 
 ### Invoices
 | Method | Route | Notes |
@@ -412,7 +419,7 @@ const form = useForm<InvoiceFormValues>({ resolver: zodResolver(invoiceSchema) }
 ### Backend unit tests (`InvoiceTracker.UnitTests` — xUnit, FluentAssertions, NSubstitute)
 
 Pure domain/application logic, no database, no network:
-- Status transitions — every valid transition succeeds (`Draft→Unpaid`, `Unpaid/Overdue→Paid`, `Draft/Unpaid→Cancelled`), every invalid one is rejected (e.g. `Paid→Cancelled`)
+- Status transitions — every valid transition succeeds (`Draft→Unpaid`, `Unpaid/Overdue→Paid`, `Draft/Unpaid→Cancelled`), every invalid one is rejected (e.g. `Paid→Cancelled`) for `Invoice`; the same pattern for `Client` (`Active→Removed` succeeds, there is no reverse transition to test) and `User` (`Active→Deactivated` and `Deactivated→Active` both succeed, since `UserStatus` is explicitly bidirectional)
 - Overdue detection — due yesterday + `Unpaid` → should flip; due today → should not; already `Paid`/`Cancelled`/`Overdue` → never reprocessed
 - Totals calculation — `LineTotal = Quantity × UnitPrice`, `Subtotal` = sum of line totals, `TaxAmount = Subtotal × TaxRate`, `Total = Subtotal + TaxAmount`, including rounding behavior
 - Invoice numbering format — `INV-0001` → `INV-0002` sequencing logic in isolation (concurrency-safety is covered at the integration level, below)
@@ -429,9 +436,9 @@ Pure domain/application logic, no database, no network:
 Full HTTP pipeline, real database, real migrations:
 - Auth — register creates Business+Owner; login succeeds/fails correctly; forgot/reset-password round trip (with a fake `IEmailSender` registered for tests, never a real Formspree call)
 - Multi-tenancy isolation — Business A creates a client, an invoice, and (indirectly, via an overdue invoice) a notification; Business B's JWT requests each of the three → `404`, proving the BusinessId-scoping rule holds at the HTTP layer for all three resources, not just one
-- Client & Invoice CRUD — including the Draft-only edit lock, and that archiving hides a record from the default list without deleting it
+- Client & Invoice CRUD — including the Draft-only edit lock, and that removing a Client (`Status → Removed`) or archiving an Invoice (`ArchivedAt`) each hides the record from the default list without deleting it
 - Invoice numbering concurrency — fire concurrent create-invoice requests for the same business, assert no duplicate numbers (proves the row-locking counter approach under contention)
-- Role-based authorization — Staff attempting `POST /api/users` → `403`; Owner succeeds; Owner attempting to deactivate their own account → `400`
+- Role-based authorization — Staff attempting `POST /api/users` → `403`; Owner succeeds; Owner attempting to deactivate their own account → `400`; Owner reactivating a previously deactivated Staff user succeeds and the user can log in again
 - Dashboard summary — seed invoices across statuses, assert the numbers match
 - PDF export — response is a valid PDF (content-type + `%PDF` magic bytes), not a visual/content assertion
 - `POST /api/invoices/{id}/send` response includes `EmailDelivery.Status`; invoice transitions to `Unpaid` even when the test's fake `IEmailSender` is configured to fail
@@ -461,7 +468,7 @@ The actual `README.md`, written once implementation starts, will cover:
 8. Database migrations — how they're applied (auto-applied on container startup, or manual `dotnet ef database update`)
 9. Deployment — Vercel's git-integration for the frontend; GitHub Actions building/pushing the API image to GHCR, then how it's rolled out on the EC2 instance; note on the Kubernetes manifests being present but not live
 10. CI/CD — what the GitHub Actions pipeline actually runs
-11. **Design decisions & trade-offs** — the most important section: clean architecture + CQRS/MediatR, JWT+Identity over cookie auth, transactional outbox for Kafka publishing, KRaft mode Kafka, the Formspree delivery limitation, the `t3.micro` RAM trade-off and mitigations, why K8s manifests aren't live, Draft-only invoice editing, `ArchivedAt` over hard delete, per-business invoice numbering under concurrency, idempotent Kafka consumption via `SourceEventId`
+11. **Design decisions & trade-offs** — the most important section: clean architecture + CQRS/MediatR, JWT+Identity over cookie auth, transactional outbox for Kafka publishing, KRaft mode Kafka, the Formspree delivery limitation, the `t3.micro` RAM trade-off and mitigations, why K8s manifests aren't live, Draft-only invoice editing, centralized status transitions (`TransitionTo`) applied consistently across Invoice/Client/User, soft-delete via `Status`/`ArchivedAt` over hard delete, per-business invoice numbering under concurrency, idempotent Kafka consumption via `SourceEventId`
 12. Known limitations / possible future work — ties back to `requirements.md`'s out-of-scope list
 13. Folder structure overview (brief, linking back to this document)
 
@@ -473,7 +480,7 @@ A sequence that gets something runnable early and layers on from there:
 2. **Domain + persistence foundation** — entities, enums, EF Core `DbContext` + configurations, first migration
 3. **Auth** — Identity + JWT issuance, register/login, `ICurrentUserService` + BusinessId scoping, forgot/reset password (with a no-op `IEmailSender` for now)
 4. **Core CRUD** — Clients and Invoices (incl. line items, per-business invoice numbering, status-transition endpoints, archive)
-5. **Team management** — Owner-only Staff user creation/listing/deactivation
+5. **Team management** — Owner-only Staff user creation/listing/deactivation/reactivation
 6. **Kafka pipeline** — `OutboxMessage` + migration, scanner, relay, Kafka topic, consumer, `FormspreeEmailSender`, Notifications endpoint
 7. **PDF export** — QuestPDF invoice template + endpoint
 8. **Dashboard summary endpoint**

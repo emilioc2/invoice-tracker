@@ -32,7 +32,15 @@ public class ClientConfiguration : IEntityTypeConfiguration<Client>
         builder.Property(c => c.LastModifiedDate)
             .IsRequired();
 
-        // Hit by list queries that filter active/archived clients per business.
-        builder.HasIndex(c => new { c.BusinessId, c.ArchivedAt });
+        builder.Property(c => c.Status)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(20);
+
+        builder.Property(c => c.StatusChangedAt)
+            .IsRequired();
+
+        // Hit by list queries that filter active/removed clients per business.
+        builder.HasIndex(c => new { c.BusinessId, c.Status });
     }
 }

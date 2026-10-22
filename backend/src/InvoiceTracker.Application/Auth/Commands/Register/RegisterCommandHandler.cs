@@ -50,8 +50,8 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthResul
             Id = ownerId,
             BusinessId = business.Id,
             Email = request.OwnerEmail,
-            Role = UserRole.Owner,
-            IsActive = true
+            Role = UserRole.Owner
+            // Status defaults to UserStatus.Active via the entity's own default initializer.
         };
         _dbContext.BusinessUsers.Add(owner);
 

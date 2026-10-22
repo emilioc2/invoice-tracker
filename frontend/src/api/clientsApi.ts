@@ -42,8 +42,10 @@ export function update(id: string, input: ClientInput): Promise<Client> {
   return apiFetch<Client>(`/api/clients/${id}`, { method: "PUT", body: input });
 }
 
-// This is the soft-delete/archive action (sets `ArchivedAt`, idempotent) — surfaced in the UI
-// only as "Archive", never "Delete", matching the backend's own semantics.
-export function archive(id: string): Promise<void> {
+// This is the status-transition action (Active -> Removed via the backend's guarded
+// `Client.TransitionTo`, idempotent at the HTTP layer) — surfaced in the UI only as "Remove",
+// never "Delete"/"Archive", matching the backend's own `RemoveClientCommand` naming. One-way
+// only: once Removed, there's no restore capability, so no `reactivate` counterpart exists here.
+export function remove(id: string): Promise<void> {
   return apiFetch<void>(`/api/clients/${id}`, { method: "DELETE" });
 }

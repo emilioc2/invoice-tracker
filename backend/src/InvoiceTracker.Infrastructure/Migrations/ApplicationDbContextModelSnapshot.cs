@@ -70,9 +70,6 @@ namespace InvoiceTracker.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<DateTime?>("ArchivedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<Guid>("BusinessId")
                         .HasColumnType("uuid");
 
@@ -97,9 +94,17 @@ namespace InvoiceTracker.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("StatusChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("BusinessId", "ArchivedAt");
+                    b.HasIndex("BusinessId", "Status");
 
                     b.ToTable("Clients", (string)null);
                 });
@@ -288,11 +293,6 @@ namespace InvoiceTracker.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
                     b.Property<bool>("MustChangePassword")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -302,6 +302,14 @@ namespace InvoiceTracker.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("StatusChangedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 

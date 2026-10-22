@@ -1,14 +1,15 @@
 using InvoiceTracker.Application.Clients.Common;
 using InvoiceTracker.Application.Common.Interfaces;
 using InvoiceTracker.Application.Common.Models;
+using InvoiceTracker.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 
 namespace InvoiceTracker.Application.Clients.Queries.ListClients;
 
 /// <summary>
-/// The default list only ever shows active (non-archived) clients for the caller's business —
-/// archiving (see <c>ArchiveClientCommandHandler</c>) hides a client here without deleting it.
+/// The default list only ever shows active (non-removed) clients for the caller's business —
+/// removing (see <c>RemoveClientCommandHandler</c>) hides a client here without deleting it.
 /// </summary>
 public class ListClientsQueryHandler : IRequestHandler<ListClientsQuery, PaginatedResult<ClientDto>>
 {
@@ -27,7 +28,7 @@ public class ListClientsQueryHandler : IRequestHandler<ListClientsQuery, Paginat
 
         var query = _dbContext.Clients
             .AsNoTracking()
-            .Where(c => c.BusinessId == businessId && c.ArchivedAt == null);
+            .Where(c => c.BusinessId == businessId && c.Status == ClientStatus.Active);
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {

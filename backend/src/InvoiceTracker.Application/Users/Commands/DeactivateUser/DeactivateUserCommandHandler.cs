@@ -17,8 +17,8 @@ namespace InvoiceTracker.Application.Users.Commands.DeactivateUser;
 ///    losing all user-management access.
 /// 3. Target's Role is Owner (even if not the caller — defensive; no code path should ever
 ///    produce a second Owner for a business, but this isn't relied upon) — 400.
-/// Deactivating an already-inactive user is idempotent: a no-op success, not an error, matching
-/// the archive-idempotency pattern used for Client/Invoice soft deletes.
+/// Deactivating an already-deactivated user is idempotent: a no-op success, not an error, matching
+/// the status-idempotency pattern used for Client/Invoice soft deletes.
 /// </summary>
 public class DeactivateUserCommandHandler : IRequestHandler<DeactivateUserCommand>
 {
@@ -49,12 +49,12 @@ public class DeactivateUserCommandHandler : IRequestHandler<DeactivateUserComman
             throw new BadRequestException("Cannot deactivate an Owner account.");
         }
 
-        if (!targetUser.IsActive)
+        if (targetUser.Status == UserStatus.Deactivated)
         {
             return;
         }
 
-        targetUser.IsActive = false;
+        targetUser.TransitionTo(UserStatus.Deactivated);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
     }

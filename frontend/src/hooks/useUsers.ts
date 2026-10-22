@@ -27,3 +27,13 @@ export function useDeactivateUserMutation() {
     },
   });
 }
+
+export function useReactivateUserMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => usersApi.reactivate(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+}
