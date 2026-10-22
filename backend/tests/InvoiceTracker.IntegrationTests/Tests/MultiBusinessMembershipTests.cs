@@ -464,6 +464,94 @@ public class MultiBusinessMembershipTests : IntegrationTestBase
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
+    [Fact]
+    public async Task GetMyMemberships_ReturnsOnlyTheCallersOwnActiveMemberships_WithCorrectBusinessNamesAndRoles()
+    {
+        var (ownerClientA, authA) = await RegisterBusinessAsync("mb-memberships-a", Password);
+
+        var businessBName = $"MB Memberships B {Guid.NewGuid():N}";
+        var addBusinessResponse = await ownerClientA.PostAsJsonAsync("/api/auth/businesses", new
+        {
+            BusinessName = businessBName,
+            BusinessEmail = UniqueEmail("mb-memberships-b")
+        });
+        addBusinessResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var addBusinessAuth = (await addBusinessResponse.Content.ReadFromJsonAsync<AuthResultDto>())!;
+
+        // A second, unrelated identity/business must never show up in the caller's own list.
+        await RegisterBusinessAsync("mb-memberships-unrelated", Password);
+
+        // ownerClientA's own token is already scoped to Business B after AddBusiness — the
+        // membership list should be identical regardless of which of the caller's own businesses
+        // the current token happens to be scoped to.
+        var membershipsResponse = await ownerClientA.GetAsync("/api/auth/memberships");
+
+        membershipsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var memberships = await membershipsResponse.Content.ReadFromJsonAsync<List<MembershipOptionDto>>();
+
+        memberships.Should().HaveCount(2);
+        memberships!.Select(m => m.BusinessId).Should()
+            .BeEquivalentTo(new[] { authA.BusinessId!.Value, addBusinessAuth.BusinessId!.Value });
+        memberships.Should().ContainSingle(m => m.BusinessId == authA.BusinessId
+            && m.Role == "Owner");
+        memberships.Should().ContainSingle(m => m.BusinessId == addBusinessAuth.BusinessId
+            && m.Role == "Owner"
+            && m.BusinessName == businessBName);
+    }
+
+    [Fact]
+    public async Task GetMyMemberships_ForASingleMembershipCaller_ReturnsJustThatOneMembership()
+    {
+        // The endpoint itself returns the caller's full active-membership list (requirements.md's
+        // "returns the caller's own active memberships") — it does not exclude whichever business
+        // the current token happens to be scoped to. A single-membership caller therefore gets
+        // back exactly one entry (their own business), not an empty list; the frontend's
+        // `BusinessSwitcher` is what filters out the current business client-side (see
+        // `AppShell.tsx`'s `otherMemberships` filter) so the dropdown only lists *other*
+        // businesses — that filtering is a UI concern, not this endpoint's contract.
+        var (ownerClient, auth) = await RegisterBusinessAsync("mb-memberships-single", Password);
+
+        var membershipsResponse = await ownerClient.GetAsync("/api/auth/memberships");
+
+        membershipsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var memberships = await membershipsResponse.Content.ReadFromJsonAsync<List<MembershipOptionDto>>();
+
+        memberships.Should().ContainSingle();
+        memberships!.Single().BusinessId.Should().Be(auth.BusinessId!.Value);
+        memberships.Single().Role.Should().Be("Owner");
+    }
+
+    [Fact]
+    public async Task GetMyMemberships_RequiresAuth_Returns401WithNoToken()
+    {
+        var client = CreateClient();
+
+        var response = await client.GetAsync("/api/auth/memberships");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GetMyMemberships_RejectsAPreAuthToken_JustLikeAnyOtherProtectedEndpoint()
+    {
+        var (ownerClientA, authA) = await RegisterBusinessAsync("mb-memberships-preauth-a", Password);
+        await ownerClientA.PostAsJsonAsync("/api/auth/businesses", new
+        {
+            BusinessName = $"MB Memberships PreAuth B {Guid.NewGuid():N}",
+            BusinessEmail = UniqueEmail("mb-memberships-preauth-b")
+        });
+
+        var client = CreateClient();
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new { Email = authA.Email, Password });
+        var loginResult = (await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>())!;
+        loginResult.RequiresBusinessSelection.Should().BeTrue();
+
+        WithToken(client, loginResult.PreAuthToken);
+        var membershipsResponse = await client.GetAsync("/api/auth/memberships");
+
+        membershipsResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     /// <summary>
     /// Same temp-password extraction helper as <c>AuthTests</c> — pulls the auto-generated temp
     /// password out of the fake <see cref="TestEmailSender"/>'s captured message.

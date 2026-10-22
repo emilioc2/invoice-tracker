@@ -3,12 +3,12 @@ import { createContext, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import * as authApi from "@/api/authApi";
 import { getStoredToken, registerUnauthorizedHandler, setStoredToken } from "@/api/client";
-import type { AuthenticatedUser } from "@/types/auth";
+import type { AuthenticatedUser, AuthResult, LoginOutcome } from "@/types/auth";
 
 interface AuthContextValue {
   user: AuthenticatedUser | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginOutcome>;
   register: (
     businessName: string,
     businessEmail: string,
@@ -23,6 +23,19 @@ interface AuthContextValue {
    * `ChangePasswordPage` after a successful `POST /api/auth/change-password`.
    */
   clearMustChangePassword: () => void;
+  /**
+   * Completes a business-selection/switch-business/add-a-business transition: takes an
+   * already-resolved (`requiresBusinessSelection: false`) `AuthResult` from
+   * `authApi.selectBusiness()`/`switchBusiness()`/`addBusiness()` and does exactly what
+   * `login()`'s own success path does — persists the token/user and calls `queryClient.clear()` —
+   * so all four auth-transition points (login, logout, selectBusiness, switchBusiness/addBusiness)
+   * clear the cache the same way, per architecture.md's "Auth transitions and the TanStack Query
+   * cache" paragraph. `queryClient.clear()` also wipes any cached `["auth", "memberships"]` query
+   * result from `useMembershipsQuery` — the switcher's dropdown re-fetches fresh from
+   * `GET /api/auth/memberships` next time it's opened, so there's no separate membership-list
+   * cache for this context to manage.
+   */
+  completeBusinessSelection: (result: AuthResult) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -45,6 +58,20 @@ function persistUser(user: AuthenticatedUser | null): void {
   } else {
     localStorage.removeItem(USER_STORAGE_KEY);
   }
+}
+
+// Builds the "current user" slice AuthContext keeps around from a resolved (non-business-
+// selection) AuthResult. Only ever called once `requiresBusinessSelection` has been confirmed
+// `false`, so the non-null assertions below are safe — the backend's AuthResultDto guarantees
+// every other field is populated in that case.
+function toAuthenticatedUser(result: AuthResult): AuthenticatedUser {
+  return {
+    userId: result.userId!,
+    businessId: result.businessId!,
+    email: result.email!,
+    role: result.role!,
+    mustChangePassword: result.mustChangePassword!,
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -75,47 +102,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => registerUnauthorizedHandler(null);
   }, [logout]);
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const result = await authApi.login(email, password);
-      const authenticatedUser: AuthenticatedUser = {
-        userId: result.userId,
-        businessId: result.businessId,
-        email: result.email,
-        role: result.role,
-        mustChangePassword: result.mustChangePassword,
-      };
+  // Shared by login's resolved branch, register, and the exported `completeBusinessSelection` —
+  // persists the token/user and wipes any stale cached data left over from a previous session on
+  // this tab.
+  const persistResolvedAuth = useCallback(
+    (result: AuthResult) => {
+      const authenticatedUser = toAuthenticatedUser(result);
       setStoredToken(result.accessToken);
       persistUser(authenticatedUser);
       setToken(result.accessToken);
       setUser(authenticatedUser);
-      // Wipe any stale cached data left over from a previous session on this tab.
       queryClient.clear();
     },
     [queryClient],
   );
 
+  const login = useCallback(
+    async (email: string, password: string): Promise<LoginOutcome> => {
+      const result = await authApi.login(email, password);
+
+      if (result.requiresBusinessSelection) {
+        // No token/user persisted yet — the caller (LoginPage) must redirect to
+        // SelectBusinessPage with this preauth token + membership list in hand.
+        return {
+          requiresBusinessSelection: true,
+          preAuthToken: result.preAuthToken!,
+          memberships: result.memberships ?? [],
+        };
+      }
+
+      persistResolvedAuth(result);
+      return { requiresBusinessSelection: false };
+    },
+    [persistResolvedAuth],
+  );
+
   // Mirrors `login`'s logic exactly: the backend's `AuthResultDto` is the shared success shape
   // for both register and login — register logs the new Owner in immediately with a usable JWT,
-  // so there's no separate "register then separately log in" step.
+  // so there's no separate "register then separately log in" step. Register can never return
+  // `requiresBusinessSelection: true` (it only ever creates a brand-new identity with exactly one
+  // membership), so no branching is needed here.
   const register = useCallback(
     async (businessName: string, businessEmail: string, ownerEmail: string, password: string) => {
       const result = await authApi.register(businessName, businessEmail, ownerEmail, password);
-      const authenticatedUser: AuthenticatedUser = {
-        userId: result.userId,
-        businessId: result.businessId,
-        email: result.email,
-        role: result.role,
-        mustChangePassword: result.mustChangePassword,
-      };
-      setStoredToken(result.accessToken);
-      persistUser(authenticatedUser);
-      setToken(result.accessToken);
-      setUser(authenticatedUser);
-      // Wipe any stale cached data left over from a previous session on this tab.
-      queryClient.clear();
+      persistResolvedAuth(result);
     },
-    [queryClient],
+    [persistResolvedAuth],
   );
 
   const clearMustChangePassword = useCallback(() => {
@@ -134,6 +166,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     register,
     logout,
     clearMustChangePassword,
+    // Same persist-token/user-plus-clear-cache logic as login's resolved branch — exposed
+    // directly rather than wrapped, since there's nothing else for this transition to do.
+    completeBusinessSelection: persistResolvedAuth,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

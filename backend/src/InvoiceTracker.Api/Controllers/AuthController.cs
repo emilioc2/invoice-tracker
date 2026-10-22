@@ -7,6 +7,7 @@ using InvoiceTracker.Application.Auth.Commands.ResetPassword;
 using InvoiceTracker.Application.Auth.Commands.SelectBusiness;
 using InvoiceTracker.Application.Auth.Commands.SwitchBusiness;
 using InvoiceTracker.Application.Auth.Common;
+using InvoiceTracker.Application.Auth.Queries.GetMyMemberships;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -98,6 +99,20 @@ public class AuthController : ControllerBase
     {
         var command = new AddBusinessCommand(request.BusinessName, request.BusinessEmail);
         var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Requires a valid (normal, non-preauth) JWT. Returns the caller's own active memberships —
+    /// lets the frontend's "Switch business" affordance do a real lazy fetch on open, rather than
+    /// relying only on whatever <c>memberships</c> list a prior multi-membership login/select-business
+    /// response happened to return earlier in this session.
+    /// </summary>
+    [HttpGet("memberships")]
+    [Authorize]
+    public async Task<ActionResult<List<MembershipOptionDto>>> GetMyMemberships(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyMembershipsQuery(), cancellationToken);
         return Ok(result);
     }
 

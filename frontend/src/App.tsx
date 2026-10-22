@@ -14,6 +14,7 @@ import { LoginPage } from "@/routes/LoginPage";
 import { NotificationsPage } from "@/routes/NotificationsPage";
 import { RegisterPage } from "@/routes/RegisterPage";
 import { ResetPasswordPage } from "@/routes/ResetPasswordPage";
+import { SelectBusinessPage } from "@/routes/SelectBusinessPage";
 import { UsersPage } from "@/routes/UsersPage";
 
 function Protected({ children }: { children: ReactNode }) {
@@ -31,6 +32,9 @@ function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      {/* Reached mid-login (requiresBusinessSelection: true), before any token exists — same
+          category as /login/register, not behind ProtectedRoute. */}
+      <Route path="/select-business" element={<SelectBusinessPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route

@@ -45,6 +45,9 @@ const LOGIN_RESULT: AuthResult = {
   email: "other-business-owner@example.com",
   role: "Owner",
   mustChangePassword: false,
+  requiresBusinessSelection: false,
+  preAuthToken: null,
+  memberships: null,
 };
 
 describe("AuthContext query cache isolation across auth transitions", () => {

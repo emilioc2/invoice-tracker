@@ -36,6 +36,18 @@ export const registerSchema = z.object({
 });
 export type RegisterFormValues = z.infer<typeof registerSchema>;
 
+// Mirrors `AddBusinessCommandValidator`: BusinessName, BusinessEmail — the same shape as
+// `registerSchema`'s business half, minus any caller-identity fields, since "Add a business"
+// reuses the caller's already-authenticated identity rather than creating a new one.
+export const addBusinessSchema = z.object({
+  businessName: z
+    .string()
+    .min(1, "Business name is required.")
+    .max(200, "Business name must be 200 characters or fewer."),
+  businessEmail: emailSchema.max(256, "Email must be 256 characters or fewer."),
+});
+export type AddBusinessFormValues = z.infer<typeof addBusinessSchema>;
+
 // Mirrors `ForgotPasswordCommandValidator`: Email.
 export const forgotPasswordSchema = z.object({
   email: emailSchema,

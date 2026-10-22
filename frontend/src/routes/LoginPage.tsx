@@ -36,7 +36,17 @@ export function LoginPage() {
     setFormError(null);
     setIsSubmitting(true);
     try {
-      await login(values.email, values.password);
+      const outcome = await login(values.email, values.password);
+      if (outcome.requiresBusinessSelection) {
+        // Transient hand-off data only — passed via router state (not context/localStorage),
+        // matching how `from`/`resetSuccess` already flow through this same mechanism. No token
+        // has been issued yet, so there's nothing to persist.
+        navigate("/select-business", {
+          replace: true,
+          state: { preAuthToken: outcome.preAuthToken, memberships: outcome.memberships },
+        });
+        return;
+      }
       navigate(state?.from?.pathname ?? "/dashboard", { replace: true });
     } catch (error) {
       setFormError(applyApiErrorToForm(error, form, FIELD_MAP));
