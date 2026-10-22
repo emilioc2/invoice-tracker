@@ -64,6 +64,10 @@ backend/
 
 **Indexing:** given the deliberately tight hosting budget (a single `t3.micro`), `Invoices` should carry a composite index on `(BusinessId, Status, DueDate)` — it's hit by the overdue scanner's periodic query, the filtered invoice list endpoint, and the dashboard summary. `Clients` and `Invoices` should also both index `(BusinessId, ArchivedAt)` since every list query filters on both.
 
+## Domain invariants: centralized status transitions
+
+The `Invoice` entity owns its own status machine. All status changes (`Draft→Unpaid`, `Unpaid→Overdue`, `Unpaid/Overdue→Paid`, `Draft/Unpaid→Cancelled` — per `requirements.md`'s status workflow) must go through a single domain method on `Invoice` (e.g. `TransitionTo(InvoiceStatus target)`) that internally guards which transitions are legal and rejects the rest. Command handlers (`SendInvoiceCommandHandler`, `MarkInvoicePaidCommandHandler`, `CancelInvoiceCommandHandler`) and `OverdueInvoiceScannerService` call this one method rather than each independently re-implementing "is this transition legal" checks. This keeps the workflow's rules in exactly one place instead of hand-duplicated across every caller, where they could otherwise silently drift out of sync.
+
 ## Request handling pattern: CQRS via MediatR
 
 Every use case is a small, single-purpose command or query:
@@ -100,6 +104,8 @@ MediatR finds the one handler registered for the command type and runs it — th
 
 Every command/query type can have a matching validator (e.g. `CreateInvoiceCommandValidator : AbstractValidator<CreateInvoiceCommand>`). A `ValidationBehavior` sits in MediatR's pipeline and runs the matching validator automatically before the handler executes — handlers never need to check "is this input valid," they only ever see validated input.
 
+**Shared rules across validators:** when a validation rule is used by more than one validator, it belongs in one shared extension/rule set, not copy-pasted into each validator. Two concrete cases: password-strength rules (shared by `RegisterCommandValidator` and `ResetPasswordCommandValidator`) and pagination bounds — `PageNumber`/`PageSize` — (shared by `ListClientsQueryValidator`, `ListInvoicesQueryValidator`, and `ListUsersQueryValidator`) must each come from a single shared FluentValidation extension method (e.g. `RuleBuilderExtensions.PasswordRules()`, `.PaginationRules()`) applied by every validator that needs it, so the policy can't silently diverge between entry points.
+
 Wiring (`Program.cs`):
 
 ```csharp
@@ -111,6 +117,8 @@ services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>
 ## Multi-tenancy & authorization
 
 Every query/command handler filters by the caller's `BusinessId`, resolved server-side from the JWT via `ICurrentUserService` — never taken from the request. If a client/invoice ID exists but belongs to a different business, the handler returns `404 Not Found`, not `403 Forbidden`, so a cross-tenant request can't even confirm the record exists.
+
+Handlers that fetch a single entity by id for the current business (the `GetXById`/`UpdateX`/status-change pattern repeated across Clients, Invoices, Users, etc.) should use one shared helper for the "get by id scoped to `BusinessId`, or throw not-found" lookup, rather than each handler restating `.FirstOrDefaultAsync(x => x.Id == id && x.BusinessId == businessId)` plus its own null-check-and-throw inline. A shared helper makes the multi-tenancy filter structurally consistent everywhere it's used instead of copy-pasted, directly serving the "never trust a client-supplied business ID" rule above.
 
 Role checks (`Owner` vs `Staff`) are enforced per-endpoint for user-management operations — see the Users routes below.
 
@@ -131,7 +139,7 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 |---|---|---|
 | GET | `/api/users` | List users in the caller's business — any authenticated user |
 | POST | `/api/users` | Owner creates a Staff user (emails a temp password) |
-| DELETE | `/api/users/{id}` | Owner deactivates a Staff user (sets `IsActive = false`). An Owner cannot deactivate their own account — rejected with `400` |
+| DELETE | `/api/users/{id}` | Owner deactivates a Staff user (sets `IsActive = false`), blocking future logins. An Owner cannot deactivate their own account — rejected with `400`. Note: this does not revoke a JWT already issued to the deactivated user — see `requirements.md`'s Auth row for this accepted limitation |
 
 ### Clients
 | Method | Route | Notes |
@@ -165,6 +173,14 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 |---|---|---|
 | GET | `/api/dashboard/summary` | Outstanding total, overdue count, counts by status |
 
+## API implementation notes
+
+**Date/time handling (UTC):** every `DateTime` value exchanged with the API — in request bodies and in query parameters (e.g. `ListInvoices`'s `dateFrom`/`dateTo`) — must represent a true UTC instant. Where an incoming value carries an explicit UTC offset (anything other than `Z`), the API must convert it to UTC via `ToUniversalTime()`, not merely relabel its `Kind` as `Utc` via `SpecifyKind` — relabeling without converting silently shifts the represented instant whenever the offset is non-zero. This applies equally to the JSON converter used for request/response bodies (`UtcDateTimeJsonConverter`) and to query-string date binding (e.g. in `ListInvoicesQueryHandler`).
+
+**List DTO shape — denormalized display fields:** `GET /api/invoices` and `GET /api/notifications` must return list DTOs that already include the fields the UI needs per row — client name on the invoice list DTO, invoice number on the notification list DTO — rather than only IDs that would force the frontend to fetch each related entity separately per row.
+
+**PDF generation — single query:** `GET /api/invoices/{id}/pdf` should assemble the invoice (with line items), client, and business data needed for the template via one query with the necessary joins/projections (scoped by the current business), not three sequential round trips — the business lookup in particular has no dependency on the invoice query's result and shouldn't wait on it.
+
 ## Kafka: overdue-notification pipeline
 
 Three hosted (`BackgroundService`) components, all running inside `InvoiceTracker.Api` (no separate deployable project) — each communicates with the others only via the database or the Kafka topic, never by direct method call, so they could be split into independent processes later with no code change beyond deployment config.
@@ -179,6 +195,8 @@ Runs on an interval (e.g. every 15 minutes). In a **single database transaction*
 Using the transactional outbox pattern here (rather than publishing to Kafka directly from the scanner) means the "this invoice is now overdue" fact and "an event needs to be published for it" fact are committed atomically. If the process crashes right after, nothing is lost — the outbox row is already durably recorded and will be picked up on the next relay pass, even though the invoice itself won't be re-selected by the scanner's query (it's no longer freshly overdue, but its outbox row is still unprocessed).
 
 **OutboxMessage entity**: `Id, Type, Payload (JSON), OccurredAt, ProcessedAt (nullable)`
+
+**Known limitation — single-instance only:** `OverdueInvoiceScannerService`'s scan-and-flip is not protected by any cross-instance mutual exclusion (no distributed/advisory lock). It assumes exactly one running instance of the API. This is consistent with the project's existing single-instance scope (one EC2 `t3.micro` running the full stack; the Kubernetes manifests are artifacts only, not a live cluster — see `requirements.md`). If the API is ever horizontally scaled, a distributed lock (or a Postgres advisory lock held for the duration of the scan) must be added around this step first — without it, two instances could race to flip and publish for the same invoice.
 
 ### 2. `OutboxRelayService` — publishes outbox entries to Kafka
 
@@ -269,6 +287,8 @@ frontend/
 └── Dockerfile
 ```
 
+**Auth transitions and the TanStack Query cache:** because multiple businesses' users can log into the same browser tab over time, `AuthContext.tsx`'s `logout()` — both the explicit user-initiated one and the automatic one triggered by `api/client.ts`'s `401` handler — and the completion of a new `login()` must call `queryClient.clear()` (before updating auth state on logout, after updating it on login) to wipe every cached query. Without this, a second business's user could briefly see the first business's cached invoices, clients, notifications, or dashboard summary rendered from stale cache before any refetch completes. This is a hard requirement, not an optimization: multi-tenant data must never persist across a user switch in the same browser tab.
+
 **Data-fetching pattern** — one hook file per resource wraps the matching `api/*.ts` functions in TanStack Query:
 
 ```ts
@@ -285,6 +305,8 @@ export function useCreateInvoiceMutation() {
   });
 }
 ```
+
+The example above shows only the `['invoices']` invalidation for brevity. In practice, **any mutation that changes an invoice's status or existence** — create, send, mark-paid, cancel, and archive — must invalidate both `['invoices']`-prefixed keys **and** `['dashboard', 'summary']`, since every one of those transitions changes the dashboard's per-status counts and/or outstanding total.
 
 Pages call these hooks directly (`const { data, isLoading } = useInvoicesQuery(filters)`) — no manual loading/error state, no manual refetch-after-mutation wiring.
 
