@@ -15,6 +15,7 @@ const DEFAULT_TEST_USER: AuthenticatedUser = {
   businessId: "business-1",
   email: "owner@example.com",
   role: "Owner",
+  mustChangePassword: false,
 };
 
 /**

@@ -7,6 +7,7 @@ export interface AuthResult {
   businessId: string;
   email: string;
   role: string;
+  mustChangePassword: boolean;
 }
 
 // Mirrors backend `UserDto` (GET /api/users items).
@@ -23,4 +24,5 @@ export interface AuthenticatedUser {
   businessId: string;
   email: string;
   role: string;
+  mustChangePassword: boolean;
 }

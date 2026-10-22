@@ -13,3 +13,21 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 
   return <>{children}</>;
 }
+
+/**
+ * Separate guard from `ProtectedRoute` above (left untouched) — blocks navigation to any normal
+ * app screen while `user.mustChangePassword` is still `true`, per architecture.md's "Forced
+ * password change for temp-password logins" section. Nested inside `ProtectedRoute` (so it only
+ * ever runs once a token is confirmed present) and wraps every existing authenticated route via
+ * `App.tsx`'s `Protected` wrapper. `/change-password` itself is wrapped in `ProtectedRoute` only,
+ * not this guard, so the redirect target stays reachable.
+ */
+export function MustChangePasswordGuard({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+
+  if (user?.mustChangePassword) {
+    return <Navigate to="/change-password" replace />;
+  }
+
+  return <>{children}</>;
+}

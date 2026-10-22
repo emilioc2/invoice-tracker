@@ -52,3 +52,12 @@ export const resetPasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
+
+// Mirrors `ChangePasswordCommandValidator`: CurrentPassword, NewPassword. Distinct from
+// `resetPasswordSchema` — this is the mid-session, known-current-password flow (forced temp-
+// password change or a self-initiated change), not the reset-token flow.
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required."),
+  newPassword: passwordSchema,
+});
+export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;

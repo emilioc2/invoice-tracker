@@ -16,6 +16,13 @@ interface AuthContextValue {
     password: string,
   ) => Promise<void>;
   logout: () => void;
+  /**
+   * Clears the current user's `mustChangePassword` flag in state + localStorage, without a new
+   * login — the already-issued JWT stays valid and usable (the flag is response-body/DB state,
+   * never a JWT claim, per architecture.md's "Forced password change" section). Called by
+   * `ChangePasswordPage` after a successful `POST /api/auth/change-password`.
+   */
+  clearMustChangePassword: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -76,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         businessId: result.businessId,
         email: result.email,
         role: result.role,
+        mustChangePassword: result.mustChangePassword,
       };
       setStoredToken(result.accessToken);
       persistUser(authenticatedUser);
@@ -98,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         businessId: result.businessId,
         email: result.email,
         role: result.role,
+        mustChangePassword: result.mustChangePassword,
       };
       setStoredToken(result.accessToken);
       persistUser(authenticatedUser);
@@ -109,12 +118,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
+  const clearMustChangePassword = useCallback(() => {
+    setUser((current) => {
+      if (!current) return current;
+      const updated: AuthenticatedUser = { ...current, mustChangePassword: false };
+      persistUser(updated);
+      return updated;
+    });
+  }, []);
+
   const value: AuthContextValue = {
     user,
     token,
     login,
     register,
     logout,
+    clearMustChangePassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

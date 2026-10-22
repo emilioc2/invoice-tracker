@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
-import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { MustChangePasswordGuard, ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { ChangePasswordPage } from "@/routes/ChangePasswordPage";
 import { ClientDetailPage } from "@/routes/ClientDetailPage";
 import { ClientsListPage } from "@/routes/ClientsListPage";
 import { DashboardPage } from "@/routes/DashboardPage";
@@ -18,7 +19,9 @@ import { UsersPage } from "@/routes/UsersPage";
 function Protected({ children }: { children: ReactNode }) {
   return (
     <ProtectedRoute>
-      <AppShell>{children}</AppShell>
+      <MustChangePasswordGuard>
+        <AppShell>{children}</AppShell>
+      </MustChangePasswordGuard>
     </ProtectedRoute>
   );
 }
@@ -30,6 +33,14 @@ function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route
+        path="/change-password"
+        element={
+          <ProtectedRoute>
+            <ChangePasswordPage />
+          </ProtectedRoute>
+        }
+      />
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route
