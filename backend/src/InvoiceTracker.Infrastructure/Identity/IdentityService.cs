@@ -66,4 +66,28 @@ public class IdentityService : IIdentityService
             ? IdentityResultDto.Success()
             : IdentityResultDto.Failure(result.Errors.Select(e => e.Description));
     }
+
+    public async Task<IdentityResultDto> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return IdentityResultDto.Failure(new[] { "User not found." });
+        }
+
+        // Checked explicitly (rather than relying solely on ChangePasswordAsync's own internal
+        // check below) so a wrong current password always comes back as this one unambiguous
+        // failure path, with no state changed.
+        var currentPasswordIsValid = await _userManager.CheckPasswordAsync(user, currentPassword);
+        if (!currentPasswordIsValid)
+        {
+            return IdentityResultDto.Failure(new[] { "Current password is incorrect." });
+        }
+
+        var result = await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+
+        return result.Succeeded
+            ? IdentityResultDto.Success()
+            : IdentityResultDto.Failure(result.Errors.Select(e => e.Description));
+    }
 }

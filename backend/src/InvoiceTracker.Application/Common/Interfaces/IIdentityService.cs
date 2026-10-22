@@ -40,4 +40,16 @@ public interface IIdentityService
     Task<string?> GeneratePasswordResetTokenAsync(string email);
 
     Task<IdentityResultDto> ResetPasswordAsync(string email, string token, string newPassword);
+
+    /// <summary>
+    /// Mid-session password change for a caller who knows their current password (as opposed to
+    /// <see cref="ResetPasswordAsync"/>'s reset-token flow). Verifies
+    /// <paramref name="currentPassword"/> against the stored hash first — a mismatch fails here,
+    /// with no state changed, rather than falling through to <c>UserManager.ChangePasswordAsync</c>'s
+    /// own (equivalent) check, so the Application layer gets one unambiguous failure path. Returns
+    /// a failure (with a message callers should surface as a 400) if no credential-store user
+    /// exists for <paramref name="userId"/>, if <paramref name="currentPassword"/> doesn't match,
+    /// or if the underlying Identity operation otherwise rejects <paramref name="newPassword"/>.
+    /// </summary>
+    Task<IdentityResultDto> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword);
 }

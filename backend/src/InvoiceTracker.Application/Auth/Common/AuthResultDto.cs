@@ -9,4 +9,5 @@ public record AuthResultDto(
     Guid UserId,
     Guid BusinessId,
     string Email,
-    string Role);
+    string Role,
+    bool MustChangePassword);

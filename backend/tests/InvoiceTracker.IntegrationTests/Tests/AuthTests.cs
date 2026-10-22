@@ -171,4 +171,123 @@ public class AuthTests : IntegrationTestBase
         // Deliberately generic — never confirms/denies whether the email matched an account.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [Fact]
+    public async Task Register_NewOwner_MustChangePasswordIsFalse()
+    {
+        var (_, auth) = await RegisterBusinessAsync("mcp-register");
+
+        auth.MustChangePassword.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Login_AfterCreateStaffUser_MustChangePasswordIsTrue_UntilChanged()
+    {
+        var (ownerClient, _) = await RegisterBusinessAsync("mcp-staff");
+        var staffEmail = UniqueEmail("mcp-staff-member");
+
+        var createResponse = await ownerClient.PostAsJsonAsync("/api/users", new { Email = staffEmail });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var tempPassword = ExtractTempPassword(staffEmail);
+
+        var staffClient = CreateClient();
+        var loginResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffEmail, Password = tempPassword });
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var staffAuth = await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>();
+        staffAuth!.MustChangePassword.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithoutAToken_ReturnsUnauthorized()
+    {
+        var client = CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/change-password", new
+        {
+            CurrentPassword = "Whatever1",
+            NewPassword = "NewPassword1"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithWrongCurrentPassword_ReturnsBadRequest_AndMustChangePasswordStaysTrue()
+    {
+        var (ownerClient, _) = await RegisterBusinessAsync("mcp-wrong-current");
+        var staffEmail = UniqueEmail("mcp-wrong-current-staff");
+        var createResponse = await ownerClient.PostAsJsonAsync("/api/users", new { Email = staffEmail });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var tempPassword = ExtractTempPassword(staffEmail);
+
+        var staffClient = CreateClient();
+        var loginResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffEmail, Password = tempPassword });
+        var staffAuth = (await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>())!;
+        Authorize(staffClient, staffAuth.AccessToken);
+
+        var changeResponse = await staffClient.PostAsJsonAsync("/api/auth/change-password", new
+        {
+            CurrentPassword = "TotallyWrongPassword1",
+            NewPassword = "BrandNewPassword1"
+        });
+
+        changeResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var reLoginResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffEmail, Password = tempPassword });
+        reLoginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reLoginAuth = await reLoginResponse.Content.ReadFromJsonAsync<AuthResultDto>();
+        reLoginAuth!.MustChangePassword.Should().BeTrue("a rejected change must leave the flag untouched");
+    }
+
+    [Fact]
+    public async Task StaffUser_LogsInWithTempPassword_ChangesPassword_ThenMustChangePasswordIsFalse()
+    {
+        var (ownerClient, _) = await RegisterBusinessAsync("mcp-e2e");
+        var staffEmail = UniqueEmail("mcp-e2e-staff");
+        var createResponse = await ownerClient.PostAsJsonAsync("/api/users", new { Email = staffEmail });
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var tempPassword = ExtractTempPassword(staffEmail);
+
+        var staffClient = CreateClient();
+        var loginResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffEmail, Password = tempPassword });
+        var staffAuth = (await loginResponse.Content.ReadFromJsonAsync<AuthResultDto>())!;
+        staffAuth.MustChangePassword.Should().BeTrue();
+        Authorize(staffClient, staffAuth.AccessToken);
+
+        const string newPassword = "BrandNewPassword1";
+        var changeResponse = await staffClient.PostAsJsonAsync("/api/auth/change-password", new
+        {
+            CurrentPassword = tempPassword,
+            NewPassword = newPassword
+        });
+        changeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var finalLoginClient = CreateClient();
+        var finalLoginResponse = await finalLoginClient.PostAsJsonAsync("/api/auth/login", new { Email = staffEmail, Password = newPassword });
+        finalLoginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var finalAuth = await finalLoginResponse.Content.ReadFromJsonAsync<AuthResultDto>();
+        finalAuth!.MustChangePassword.Should().BeFalse();
+
+        // The temp password no longer works, either.
+        var oldPasswordLogin = await CreateClient().PostAsJsonAsync("/api/auth/login", new { Email = staffEmail, Password = tempPassword });
+        oldPasswordLogin.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// Pulls the auto-generated temp password out of the fake <see cref="TestEmailSender"/>'s
+    /// captured message for <paramref name="staffEmail"/> — matches
+    /// <c>CreateStaffUserCommandHandler</c>'s email body: "... Temporary password: {tempPassword}.
+    /// Please log in ...".
+    /// </summary>
+    private string ExtractTempPassword(string staffEmail)
+    {
+        var sentEmail = Factory.EmailSender.FindLatestTo(staffEmail);
+        sentEmail.Should().NotBeNull("CreateStaffUser should have emailed a temp password via IEmailSender");
+
+        var match = Regex.Match(sentEmail!.Body, @"Temporary password: (?<password>[^.\s]+)\.");
+        match.Success.Should().BeTrue("the fake email body should contain the temp password");
+        return match.Groups["password"].Value;
+    }
 }

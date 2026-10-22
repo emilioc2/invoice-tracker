@@ -25,6 +25,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsRequired()
             .HasDefaultValue(true);
 
+        builder.Property(u => u.MustChangePassword)
+            .IsRequired()
+            .HasDefaultValue(false);
+
         builder.HasIndex(u => u.BusinessId);
     }
 }

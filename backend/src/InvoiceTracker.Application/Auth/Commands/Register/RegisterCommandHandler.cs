@@ -70,6 +70,9 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthResul
 
         var token = _jwtTokenGenerator.GenerateToken(ownerId, business.Id, owner.Role.ToString(), owner.Email);
 
-        return new AuthResultDto(token.AccessToken, token.ExpiresAtUtc, ownerId, business.Id, owner.Email, owner.Role.ToString());
+        // A newly-registered Owner chooses their own password at registration — never a temp
+        // password — so MustChangePassword is always false here.
+        return new AuthResultDto(
+            token.AccessToken, token.ExpiresAtUtc, ownerId, business.Id, owner.Email, owner.Role.ToString(), MustChangePassword: false);
     }
 }

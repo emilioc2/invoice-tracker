@@ -48,7 +48,10 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
             BusinessId = businessId,
             Email = request.Email,
             Role = UserRole.Staff,
-            IsActive = true
+            IsActive = true,
+            // Must be changed via ChangePasswordCommandHandler before this Staff user gets normal
+            // access — see architecture.md's "Forced password change for temp-password logins".
+            MustChangePassword = true
         };
         _dbContext.BusinessUsers.Add(staffUser);
 

@@ -44,6 +44,7 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResultDto>
 
         var token = _jwtTokenGenerator.GenerateToken(user.Id, user.BusinessId, user.Role.ToString(), user.Email);
 
-        return new AuthResultDto(token.AccessToken, token.ExpiresAtUtc, user.Id, user.BusinessId, user.Email, user.Role.ToString());
+        return new AuthResultDto(
+            token.AccessToken, token.ExpiresAtUtc, user.Id, user.BusinessId, user.Email, user.Role.ToString(), user.MustChangePassword);
     }
 }

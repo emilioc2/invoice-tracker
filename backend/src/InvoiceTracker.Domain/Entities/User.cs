@@ -14,4 +14,11 @@ public class User : ITenantScopedEntity
     public string Email { get; set; } = string.Empty;
     public UserRole Role { get; set; }
     public bool IsActive { get; set; } = true;
+
+    // Set true when a Staff user is created with an auto-generated temp password (see
+    // CreateStaffUserCommandHandler) and cleared back to false on that user's next successful
+    // password change via ChangePasswordCommandHandler — see architecture.md's "Forced password
+    // change for temp-password logins". Never true for a newly-registered Owner, who chooses
+    // their own password at registration.
+    public bool MustChangePassword { get; set; }
 }

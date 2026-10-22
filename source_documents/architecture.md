@@ -135,9 +135,10 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 | Method | Route | Notes |
 |---|---|---|
 | POST | `/api/auth/register` | Creates a new Business + its Owner user |
-| POST | `/api/auth/login` | Returns a JWT |
+| POST | `/api/auth/login` | Returns a JWT, plus `MustChangePassword` (see "Forced password change" below) |
 | POST | `/api/auth/forgot-password` | Triggers reset email via `IEmailSender` |
 | POST | `/api/auth/reset-password` | Consumes the reset token, sets new password |
+| POST | `/api/auth/change-password` | Requires a valid JWT (not in the exempt list above). Takes `{ currentPassword, newPassword }`; mid-session change using a known current password — distinct from `reset-password`'s reset-token flow. Clears `MustChangePassword`. See "Forced password change" below |
 
 ### Users (team management — Owner only except where noted)
 | Method | Route | Notes |
@@ -295,6 +296,36 @@ public record SendInvoiceResult(InvoiceDto Invoice, EmailDeliveryResult EmailDel
 
 Result shape: `public record ResendInvoiceEmailResult(EmailDeliveryResult EmailDelivery);`
 
+## Forced password change for temp-password logins
+
+A Staff user's temp password (created by `CreateStaffUserCommandHandler` — see `requirements.md`'s "Multi-user onboarding") must be changed before that user can use the rest of the system. This is a new, mid-session flow — distinct from the existing `forgot-password`/`reset-password` pair, which remains a pre-auth, reset-token-based flow for "I don't remember my password at all." The forced-change flow instead assumes the caller already holds a valid JWT and knows their current (temp) password.
+
+**`User.MustChangePassword` (bool, default `false`) — new column, needs an EF Core migration.**
+- Set `true` by `CreateStaffUserCommandHandler` at the same point it generates and emails the temp password.
+- Cleared to `false` by the new `ChangePasswordCommandHandler` (below) on a successful change.
+
+**`AuthResultDto` gains a `MustChangePassword` field:**
+```csharp
+public record AuthResultDto(
+    string AccessToken,
+    DateTime ExpiresAtUtc,
+    Guid UserId,
+    Guid BusinessId,
+    string Email,
+    string Role,
+    bool MustChangePassword);
+```
+Returned by `POST /api/auth/login`. `RegisterCommandHandler` returns the same `AuthResultDto` shape (`register` creates the Owner and logs them in immediately) — `MustChangePassword` is always `false` there, since a newly-registered Owner chooses their own password at registration and never has a temp password.
+
+**`ChangePasswordCommandHandler` (new, `Auth/Commands/ChangePassword/`):** takes `{ currentPassword, newPassword }` from the authenticated caller (`ICurrentUserService` resolves the user, never a client-supplied id).
+1. Load the current user, verify `currentPassword` against the Identity password hash (e.g. `UserManager.CheckPasswordAsync`). Wrong password → reject with `400`, no state changes.
+2. `UserManager.ChangePasswordAsync(user, currentPassword, newPassword)`.
+3. On success, set `MustChangePassword = false`, save.
+
+`ChangePasswordCommandValidator` applies the same shared `RuleBuilderExtensions.PasswordRules()` extension already used by `RegisterCommandValidator` and `ResetPasswordCommandValidator` (per this document's "shared rules across validators" convention above) — the password-strength policy is not re-implemented a third time.
+
+No JWT re-issuance happens here and none is needed: the already-issued JWT remains valid and usable to call `change-password`, because `MustChangePassword` was never a JWT claim — it's response-body/DB state only, consistent with the project's existing minimal-JWT, no-refresh-token design (see `requirements.md`'s Auth row).
+
 ## Frontend architecture
 
 **Stack:** React + TypeScript via Vite, React Router, **TanStack Query** for server state, **React Hook Form + Zod** for forms/validation, **Tailwind CSS + shadcn/ui** for styling/components.
@@ -314,7 +345,7 @@ frontend/
 │   ├── context/
 │   │   └── AuthContext.tsx          # current user/business, login/logout, token storage
 │   ├── routes/                     # page-level components
-│   │   ├── LoginPage.tsx, RegisterPage.tsx, ForgotPasswordPage.tsx, ResetPasswordPage.tsx
+│   │   ├── LoginPage.tsx, RegisterPage.tsx, ForgotPasswordPage.tsx, ResetPasswordPage.tsx, ChangePasswordPage.tsx
 │   │   ├── DashboardPage.tsx
 │   │   ├── ClientsListPage.tsx, ClientDetailPage.tsx
 │   │   ├── InvoicesListPage.tsx, InvoiceDetailPage.tsx, InvoiceFormPage.tsx  # create/edit, edit only while Draft
@@ -337,6 +368,8 @@ frontend/
 ```
 
 **Auth transitions and the TanStack Query cache:** because multiple businesses' users can log into the same browser tab over time, `AuthContext.tsx`'s `logout()` — both the explicit user-initiated one and the automatic one triggered by `api/client.ts`'s `401` handler — and the completion of a new `login()` must call `queryClient.clear()` (before updating auth state on logout, after updating it on login) to wipe every cached query. Without this, a second business's user could briefly see the first business's cached invoices, clients, notifications, or dashboard summary rendered from stale cache before any refetch completes. This is a hard requirement, not an optimization: multi-tenant data must never persist across a user switch in the same browser tab.
+
+**Forced password-change route guard:** when `login()` resolves with `mustChangePassword: true`, `AuthContext.tsx` routes the SPA to a new `ChangePasswordPage.tsx` and keeps it there — the inverse of the existing `ProtectedRoute` (`components/layout/ProtectedRoute.tsx`), which keeps unauthenticated users *out* of the app; this guard keeps an authenticated-but-not-yet-compliant user *out of everything else*, until the `POST /api/auth/change-password` call succeeds and clears the flag in client state, at which point normal routing resumes with no new login required.
 
 **Data-fetching pattern** — one hook file per resource wraps the matching `api/*.ts` functions in TanStack Query:
 
@@ -389,6 +422,7 @@ Pure domain/application logic, no database, no network:
 - `SendInvoiceCommandHandler`: status transition still succeeds and persists when `IEmailSender` throws/returns failure; `Notification` recorded as `Sent` on success and `Failed` on failure, in both cases `NotificationType = InvoiceSent`
 - `ResendInvoiceEmailCommandHandler`: rejects a `Draft` invoice with no side effects; succeeds for `Unpaid`/`Overdue`/`Paid`/`Cancelled` without mutating invoice status; records a new `Notification` with a fresh `SourceEventId` each call
 - `FormspreeEmailSender`: builds a correct `multipart/form-data` request when attachments are present (against a fake `HttpMessageHandler`, no real Formspree call)
+- `ChangePasswordCommandHandler`: rejects a wrong `currentPassword` with no state change; succeeds and clears `MustChangePassword` to `false` on a correct `currentPassword` + valid `newPassword`; `ChangePasswordCommandValidator` enforces the same shared `PasswordRules()` used by `RegisterCommandValidator`/`ResetPasswordCommandValidator`
 
 ### Backend integration tests (`InvoiceTracker.IntegrationTests` — xUnit, `WebApplicationFactory`, Testcontainers for Postgres)
 
@@ -403,6 +437,7 @@ Full HTTP pipeline, real database, real migrations:
 - `POST /api/invoices/{id}/send` response includes `EmailDelivery.Status`; invoice transitions to `Unpaid` even when the test's fake `IEmailSender` is configured to fail
 - `POST /api/invoices/{id}/resend-email` → `400` for a `Draft` invoice, `200` + new `Notification` row for a non-`Draft` one
 - `GET /api/notifications` list DTO includes `NotificationType` and distinguishes `OverdueReminder` from `InvoiceSent` rows
+- Forced password change — `POST /api/auth/login` response's `MustChangePassword` is `true` immediately after a Staff user is created via `CreateStaffUser` (temp password), and `false` for a freshly registered Owner; `POST /api/auth/change-password` requires a valid JWT (`401` without one); end-to-end, a Staff user created via `CreateStaffUser` logs in with the temp password, calls `change-password` with it as `currentPassword`, succeeds, and a subsequent login shows `MustChangePassword: false`
 
 ### Frontend tests (Vitest, React Testing Library, MSW)
 
