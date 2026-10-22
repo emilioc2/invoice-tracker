@@ -25,6 +25,7 @@ export function useCreateInvoiceMutation() {
     mutationFn: (input: InvoiceInput) => invoicesApi.create(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "summary"] });
     },
   });
 }
@@ -47,6 +48,7 @@ export function useSendInvoiceMutation() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["invoices", id] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "summary"] });
     },
   });
 }
@@ -58,6 +60,7 @@ export function useMarkInvoicePaidMutation() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["invoices", id] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "summary"] });
     },
   });
 }
@@ -69,6 +72,7 @@ export function useCancelInvoiceMutation() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["invoices", id] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "summary"] });
     },
   });
 }
@@ -80,6 +84,7 @@ export function useArchiveInvoiceMutation() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["invoices", id] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", "summary"] });
     },
   });
 }
