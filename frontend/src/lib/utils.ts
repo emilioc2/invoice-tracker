@@ -1,10 +1,10 @@
 export { cn } from "cn"
 
 // This project is explicitly single-currency (no multi-currency/i18n support, per
-// requirements.md), so a fixed USD format is fine here rather than something configurable.
-const currencyFormatter = new Intl.NumberFormat("en-US", {
+// requirements.md), so a fixed ZAR format is fine here rather than something configurable.
+const currencyFormatter = new Intl.NumberFormat("en-ZA", {
   style: "currency",
-  currency: "USD",
+  currency: "ZAR",
 })
 
 export function formatCurrency(amount: number): string {
