@@ -74,7 +74,10 @@ describe("invoice mutations invalidate the dashboard summary query", () => {
         });
       }),
       http.post("*/api/invoices/:id/send", () =>
-        HttpResponse.json({ ...BASE_INVOICE, status: "Unpaid" }),
+        HttpResponse.json({
+          invoice: { ...BASE_INVOICE, status: "Unpaid" },
+          emailDelivery: { status: "Sent", notificationId: "notif-1" },
+        }),
       ),
     );
 

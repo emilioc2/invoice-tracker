@@ -51,3 +51,24 @@ export interface InvoiceInput {
   notes: string;
   lineItems: InvoiceLineItemInput[];
 }
+
+// Mirrors backend `EmailDeliveryResult`/`SendInvoiceResult`/`ResendInvoiceEmailResult` — same
+// camelCase convention as the rest of this file. Reported separately from the (always
+// independent) Send/Resend action's own success, per architecture.md's "Invoice send/resend
+// email delivery" section: the status transition (Send) always succeeds on its own merits, and
+// email delivery is a best-effort side effect whose own outcome is surfaced here.
+export interface EmailDeliveryResult {
+  status: "Sent" | "Failed";
+  notificationId: string;
+}
+
+// Response shape for POST /api/invoices/{id}/send.
+export interface SendInvoiceResult {
+  invoice: Invoice;
+  emailDelivery: EmailDeliveryResult;
+}
+
+// Response shape for POST /api/invoices/{id}/resend-email.
+export interface ResendInvoiceEmailResult {
+  emailDelivery: EmailDeliveryResult;
+}

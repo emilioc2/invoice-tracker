@@ -1,7 +1,13 @@
 import { apiFetch, apiFetchBlob } from "@/api/client";
 import { dateOnlyToUtcIso } from "@/lib/utils";
 import { downloadBlob } from "@/lib/downloadBlob";
-import type { Invoice, InvoiceInput, InvoiceStatus } from "@/types/invoice";
+import type {
+  Invoice,
+  InvoiceInput,
+  InvoiceStatus,
+  ResendInvoiceEmailResult,
+  SendInvoiceResult,
+} from "@/types/invoice";
 import type { PaginatedResult } from "@/types/common";
 
 export interface InvoiceListParams {
@@ -59,8 +65,16 @@ export function update(id: string, input: InvoiceInput): Promise<Invoice> {
   return apiFetch<Invoice>(`/api/invoices/${id}`, { method: "PUT", body: input });
 }
 
-export function send(id: string): Promise<Invoice> {
-  return apiFetch<Invoice>(`/api/invoices/${id}/send`, { method: "POST" });
+export function send(id: string): Promise<SendInvoiceResult> {
+  return apiFetch<SendInvoiceResult>(`/api/invoices/${id}/send`, { method: "POST" });
+}
+
+// Valid for any invoice status except Draft (400 otherwise) — re-delivers the same PDF+details
+// email without transitioning status or touching the Draft-only edit lock.
+export function resendEmail(id: string): Promise<ResendInvoiceEmailResult> {
+  return apiFetch<ResendInvoiceEmailResult>(`/api/invoices/${id}/resend-email`, {
+    method: "POST",
+  });
 }
 
 export function markPaid(id: string): Promise<Invoice> {

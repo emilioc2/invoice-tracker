@@ -13,11 +13,13 @@ import {
   useCancelInvoiceMutation,
   useInvoiceQuery,
   useMarkInvoicePaidMutation,
+  useResendInvoiceEmailMutation,
   useSendInvoiceMutation,
 } from "@/hooks/useInvoices";
 import { formatCurrency } from "@/lib/utils";
+import type { EmailDeliveryResult } from "@/types/invoice";
 
-type PendingAction = "send" | "markPaid" | "cancel" | "archive" | null;
+type PendingAction = "send" | "resendEmail" | "markPaid" | "cancel" | "archive" | null;
 
 const ACTION_CONFIG: Record<
   Exclude<PendingAction, null>,
@@ -28,6 +30,11 @@ const ACTION_CONFIG: Record<
     description:
       "This moves the invoice from Draft to Unpaid, sets its issue date, and locks it from further editing.",
     confirmLabel: "Send",
+  },
+  resendEmail: {
+    title: "Resend invoice email?",
+    description: "Re-sends the invoice PDF and details to the client.",
+    confirmLabel: "Resend",
   },
   markPaid: {
     title: "Mark invoice as paid?",
@@ -46,6 +53,21 @@ const ACTION_CONFIG: Record<
   },
 };
 
+// The Send/Resend action itself always succeeds independently of email delivery (per
+// architecture.md's "Invoice send/resend email delivery" section) — a `Failed` outcome here is
+// an expected possible result, not an action failure, so it's surfaced via a non-destructive
+// info Alert rather than the destructive `actionError` one. `Sent` needs no special message —
+// the existing success flow (dialog closes, status badge updates) is enough.
+function emailDeliveryMessage(
+  action: "send" | "resendEmail",
+  emailDelivery: EmailDeliveryResult,
+): string | null {
+  if (emailDelivery.status !== "Failed") return null;
+  return action === "send"
+    ? "Invoice sent, but email delivery failed. You can try resending it below."
+    : "Email delivery failed. You can try resending it again below.";
+}
+
 function extractErrorTitle(error: unknown): string {
   if (error instanceof ApiError) {
     const body = error.body as { title?: string } | null | undefined;
@@ -61,10 +83,12 @@ export function InvoiceDetailPage() {
   const navigate = useNavigate();
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [emailInfoMessage, setEmailInfoMessage] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
   const { data: invoice, isLoading, error } = useInvoiceQuery(invoiceId);
   const sendMutation = useSendInvoiceMutation();
+  const resendEmailMutation = useResendInvoiceEmailMutation();
   const markPaidMutation = useMarkInvoicePaidMutation();
   const cancelMutation = useCancelInvoiceMutation();
   const archiveMutation = useArchiveInvoiceMutation();
@@ -94,6 +118,7 @@ export function InvoiceDetailPage() {
   const isArchived = !!invoice.archivedAt;
   const isConfirming =
     sendMutation.isPending ||
+    resendEmailMutation.isPending ||
     markPaidMutation.isPending ||
     cancelMutation.isPending ||
     archiveMutation.isPending;
@@ -101,8 +126,16 @@ export function InvoiceDetailPage() {
   const runAction = async () => {
     if (!pendingAction || !invoiceId) return;
     setActionError(null);
+    setEmailInfoMessage(null);
     try {
-      if (pendingAction === "send") await sendMutation.mutateAsync(invoiceId);
+      if (pendingAction === "send") {
+        const { emailDelivery } = await sendMutation.mutateAsync(invoiceId);
+        setEmailInfoMessage(emailDeliveryMessage("send", emailDelivery));
+      }
+      if (pendingAction === "resendEmail") {
+        const { emailDelivery } = await resendEmailMutation.mutateAsync(invoiceId);
+        setEmailInfoMessage(emailDeliveryMessage("resendEmail", emailDelivery));
+      }
       if (pendingAction === "markPaid") await markPaidMutation.mutateAsync(invoiceId);
       if (pendingAction === "cancel") await cancelMutation.mutateAsync(invoiceId);
       if (pendingAction === "archive") await archiveMutation.mutateAsync(invoiceId);
@@ -110,6 +143,12 @@ export function InvoiceDetailPage() {
     } catch (actionErr) {
       setActionError(extractErrorTitle(actionErr));
     }
+  };
+
+  const openAction = (action: Exclude<PendingAction, null>) => {
+    setActionError(null);
+    setEmailInfoMessage(null);
+    setPendingAction(action);
   };
 
   const handleDownloadPdf = async () => {
@@ -139,19 +178,24 @@ export function InvoiceDetailPage() {
             </Button>
           )}
           {invoice.status === "Draft" && (
-            <Button onClick={() => setPendingAction("send")}>Send</Button>
+            <Button onClick={() => openAction("send")}>Send</Button>
           )}
           {(invoice.status === "Unpaid" || invoice.status === "Overdue") && (
-            <Button onClick={() => setPendingAction("markPaid")}>Mark paid</Button>
+            <Button onClick={() => openAction("markPaid")}>Mark paid</Button>
           )}
           {(invoice.status === "Draft" || invoice.status === "Unpaid") && (
-            <Button variant="destructive" onClick={() => setPendingAction("cancel")}>
+            <Button variant="destructive" onClick={() => openAction("cancel")}>
               Cancel invoice
             </Button>
           )}
           {!isArchived && (
-            <Button variant="destructive" onClick={() => setPendingAction("archive")}>
+            <Button variant="destructive" onClick={() => openAction("archive")}>
               Remove
+            </Button>
+          )}
+          {invoice.status !== "Draft" && (
+            <Button variant="outline" onClick={() => openAction("resendEmail")}>
+              Resend email
             </Button>
           )}
           <Button variant="outline" onClick={handleDownloadPdf} disabled={isDownloading}>
@@ -164,6 +208,17 @@ export function InvoiceDetailPage() {
         <Alert variant="destructive">
           <AlertTitle>Action failed</AlertTitle>
           <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Email delivery is a best-effort side effect of Send/Resend, reported separately from
+          the (always independent) action's own success — a `Failed` outcome is an expected
+          possible result, not an action failure, so it gets this non-destructive info Alert
+          rather than the destructive `actionError` one above. */}
+      {emailInfoMessage && (
+        <Alert>
+          <AlertTitle>Email delivery</AlertTitle>
+          <AlertDescription>{emailInfoMessage}</AlertDescription>
         </Alert>
       )}
 
