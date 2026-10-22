@@ -107,3 +107,113 @@ describe("InvoicesListPage status filter", () => {
     expect(finalParams.get("status")).not.toBe("");
   });
 });
+
+describe("InvoicesListPage denormalized client name", () => {
+  beforeEach(() => {
+    seedAuthenticatedSession();
+  });
+
+  it("renders the list response's clientName directly, without fetching the client by id", async () => {
+    let clientDetailFetched = false;
+    const invoicesResponse: PaginatedResult<Invoice> = {
+      items: [
+        {
+          id: "invoice-1",
+          clientId: "client-1",
+          clientName: "Acme Co",
+          invoiceNumber: "INV-0001",
+          createdAtDate: "2026-01-01T00:00:00Z",
+          issueDate: null,
+          dueDate: "2026-02-01T00:00:00.000Z",
+          status: "Draft",
+          subtotal: 100,
+          taxRate: 0,
+          taxAmount: 0,
+          total: 100,
+          notes: "",
+          lastModifiedDate: "2026-01-01T00:00:00Z",
+          archivedAt: null,
+          lineItems: [],
+        },
+      ],
+      totalCount: 1,
+      pageNumber: 1,
+      pageSize: 20,
+      totalPages: 1,
+    };
+
+    server.use(
+      http.get("*/api/invoices", () => HttpResponse.json(invoicesResponse)),
+      http.get("*/api/clients", () => HttpResponse.json(EMPTY_CLIENTS)),
+      http.get("*/api/clients/:id", () => {
+        clientDetailFetched = true;
+        return HttpResponse.json({ id: "client-1", name: "Acme Co" });
+      }),
+    );
+
+    const queryClient = createTestQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/invoices"]}>
+            <Routes>
+              <Route path="/invoices" element={<InvoicesListPage />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Acme Co")).toBeInTheDocument();
+    expect(clientDetailFetched).toBe(false);
+  });
+
+  it("falls back to 'Unknown client' when clientName is null", async () => {
+    const invoicesResponse: PaginatedResult<Invoice> = {
+      items: [
+        {
+          id: "invoice-2",
+          clientId: "client-2",
+          clientName: null,
+          invoiceNumber: "INV-0002",
+          createdAtDate: "2026-01-01T00:00:00Z",
+          issueDate: null,
+          dueDate: "2026-02-01T00:00:00.000Z",
+          status: "Draft",
+          subtotal: 50,
+          taxRate: 0,
+          taxAmount: 0,
+          total: 50,
+          notes: "",
+          lastModifiedDate: "2026-01-01T00:00:00Z",
+          archivedAt: null,
+          lineItems: [],
+        },
+      ],
+      totalCount: 1,
+      pageNumber: 1,
+      pageSize: 20,
+      totalPages: 1,
+    };
+
+    server.use(
+      http.get("*/api/invoices", () => HttpResponse.json(invoicesResponse)),
+      http.get("*/api/clients", () => HttpResponse.json(EMPTY_CLIENTS)),
+    );
+
+    const queryClient = createTestQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/invoices"]}>
+            <Routes>
+              <Route path="/invoices" element={<InvoicesListPage />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Unknown client")).toBeInTheDocument();
+  });
+});

@@ -1,7 +1,9 @@
 // Mirrors backend `InvoiceDto`/`InvoiceLineItemDto` — System.Text.Json default camelCase
-// serialization, same convention as Client. Note there's no client name on the wire, only
-// `clientId` — resolving a display name is a frontend concern (see
-// `components/invoices/ClientName.tsx`), not a backend join.
+// serialization, same convention as Client. `clientName` is a denormalized display field
+// populated only by handlers that join against Clients (list views, e.g. GET /api/invoices) —
+// it's `undefined`/`null` on single-invoice reads (GET /api/invoices/{id}), which still only
+// carry `clientId`; resolving a display name there remains a frontend concern (see
+// `components/invoices/ClientName.tsx`).
 export type InvoiceStatus = "Draft" | "Unpaid" | "Overdue" | "Paid" | "Cancelled";
 
 export interface InvoiceLineItem {
@@ -15,6 +17,8 @@ export interface InvoiceLineItem {
 export interface Invoice {
   id: string;
   clientId: string;
+  /** Denormalized display field — see note above. Populated on list responses, `null`/absent otherwise. */
+  clientName?: string | null;
   invoiceNumber: string;
   createdAtDate: string;
   /** `null` while Draft — set automatically (and becomes immutable) the moment it's sent. */

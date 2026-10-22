@@ -5,6 +5,12 @@
 export interface Notification {
   id: string;
   invoiceId: string;
+  /**
+   * Denormalized display field populated by `ListNotificationsQueryHandler`'s join against
+   * Invoices (GET /api/notifications), so the frontend doesn't need a separate per-row fetch of
+   * the invoice just to show its number.
+   */
+  invoiceNumber?: string | null;
   status: "Pending" | "Sent" | "Failed";
   /** Set when the row transitions to `Sent`; stays `null` for `Pending`/`Failed`. */
   sentAt: string | null;

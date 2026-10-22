@@ -1,7 +1,6 @@
 import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClientName } from "@/components/invoices/ClientName";
 import { InvoiceFilters, type InvoiceFiltersValue } from "@/components/invoices/InvoiceFilters";
 import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -40,7 +39,7 @@ export function InvoicesListPage() {
     {
       key: "client",
       header: "Client",
-      cell: (invoice) => <ClientName clientId={invoice.clientId} />,
+      cell: (invoice) => invoice.clientName ?? "Unknown client",
     },
     {
       key: "status",

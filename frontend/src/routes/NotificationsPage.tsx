@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { DataTable, type DataTableColumn } from "@/components/common/DataTable";
 import { Pagination } from "@/components/common/Pagination";
-import { InvoiceNumber } from "@/components/notifications/InvoiceNumber";
 import { NotificationStatusBadge } from "@/components/notifications/NotificationStatusBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useNotificationsQuery } from "@/hooks/useNotifications";
@@ -31,7 +30,14 @@ export function NotificationsPage() {
     {
       key: "invoice",
       header: "Invoice #",
-      cell: (notification) => <InvoiceNumber invoiceId={notification.invoiceId} />,
+      cell: (notification) => (
+        <Link
+          to={`/invoices/${notification.invoiceId}`}
+          className="underline-offset-2 hover:underline"
+        >
+          {notification.invoiceNumber ?? "Unknown invoice"}
+        </Link>
+      ),
     },
     { key: "channel", header: "Channel", cell: (notification) => notification.channel },
     {
