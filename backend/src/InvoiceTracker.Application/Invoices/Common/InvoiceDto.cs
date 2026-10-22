@@ -15,4 +15,8 @@ public record InvoiceDto(
     string? Notes,
     DateTime LastModifiedDate,
     DateTime? ArchivedAt,
-    IReadOnlyList<InvoiceLineItemDto> LineItems);
+    IReadOnlyList<InvoiceLineItemDto> LineItems,
+    // Denormalized display field for list views (e.g. GET /api/invoices) so the frontend doesn't
+    // need a separate per-row fetch of the client just to show its name. Populated by handlers that
+    // join against Clients (see ListInvoicesQueryHandler); null/omitted elsewhere.
+    string? ClientName = null);

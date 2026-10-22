@@ -29,16 +29,19 @@ public class ListNotificationsQueryHandler : IRequestHandler<ListNotificationsQu
     {
         var businessId = _currentUserService.BusinessId!.Value;
 
+        // Join against Invoices (scoped to the same business) in the same query to pick up the
+        // invoice's display number for each row, rather than making the frontend fetch each invoice
+        // separately per row — see architecture.md's "List DTO shape" note.
         var query =
             from notification in _dbContext.Notifications.AsNoTracking()
             join invoice in _dbContext.Invoices.AsNoTracking()
                 on notification.InvoiceId equals invoice.Id
             where invoice.BusinessId == businessId
-            select notification;
+            select new { Notification = notification, invoice.InvoiceNumber };
 
         if (request.InvoiceId.HasValue)
         {
-            query = query.Where(n => n.InvoiceId == request.InvoiceId.Value);
+            query = query.Where(x => x.Notification.InvoiceId == request.InvoiceId.Value);
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
@@ -47,14 +50,14 @@ public class ListNotificationsQueryHandler : IRequestHandler<ListNotificationsQu
         // only set once a send is attempted, so most-recently-sent-first, with Id as a stable
         // tie-break for rows that share a SentAt (or are both still null), is the closest
         // approximation of "most recent first" available from the existing shape.
-        var entities = await query
-            .OrderByDescending(n => n.SentAt)
-            .ThenByDescending(n => n.Id)
+        var page = await query
+            .OrderByDescending(x => x.Notification.SentAt)
+            .ThenByDescending(x => x.Notification.Id)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
             .ToListAsync(cancellationToken);
 
-        var items = entities.Select(n => n.ToDto()).ToList();
+        var items = page.Select(x => x.Notification.ToDto(x.InvoiceNumber)).ToList();
 
         return new PaginatedResult<NotificationDto>(items, totalCount, request.PageNumber, request.PageSize);
     }

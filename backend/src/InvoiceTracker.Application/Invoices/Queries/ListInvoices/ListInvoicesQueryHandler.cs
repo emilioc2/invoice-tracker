@@ -51,13 +51,21 @@ public class ListInvoicesQueryHandler : IRequestHandler<ListInvoicesQuery, Pagin
 
         var totalCount = await query.CountAsync(cancellationToken);
 
-        var entities = await query
+        // Join against Clients (scoped to the same business) in the same query to pick up the
+        // client's display name for each row, rather than making the frontend fetch each client
+        // separately per row — see architecture.md's "List DTO shape" note.
+        var page = await query
             .OrderByDescending(i => i.CreatedAtDate)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
+            .Join(
+                _dbContext.Clients.AsNoTracking().Where(c => c.BusinessId == businessId),
+                invoice => invoice.ClientId,
+                client => client.Id,
+                (invoice, client) => new { Invoice = invoice, client.Name })
             .ToListAsync(cancellationToken);
 
-        var items = entities.Select(i => i.ToDto()).ToList();
+        var items = page.Select(x => x.Invoice.ToDto(x.Name)).ToList();
 
         return new PaginatedResult<InvoiceDto>(items, totalCount, request.PageNumber, request.PageSize);
     }
@@ -69,7 +77,26 @@ public class ListInvoicesQueryHandler : IRequestHandler<ListInvoicesQuery, Pagin
     /// rejects parameterizing a Kind = Unspecified DateTime against a timestamptz column, so this
     /// normalizes right before the value is used in an EF Core predicate, the actual point of
     /// contact with Npgsql for this binding path.
+    ///
+    /// If the query value instead carries an explicit non-"Z" UTC offset (e.g.
+    /// ?dateFrom=2026-01-01T00:00:00-05:00), the model binder produces Kind = Local, representing an
+    /// already-shifted walltime — merely relabeling that via SpecifyKind (without first calling
+    /// ToUniversalTime()) would silently shift the represented instant by the server's local UTC
+    /// offset. So Local values are converted via ToUniversalTime() first; Unspecified (no offset at
+    /// all) values are simply relabeled, since there's no shift to correct for.
     /// </summary>
-    private static DateTime NormalizeToUtc(DateTime value) =>
-        value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+    private static DateTime NormalizeToUtc(DateTime value)
+    {
+        if (value.Kind == DateTimeKind.Utc)
+        {
+            return value;
+        }
+
+        if (value.Kind == DateTimeKind.Local)
+        {
+            return DateTime.SpecifyKind(value.ToUniversalTime(), DateTimeKind.Utc);
+        }
+
+        return DateTime.SpecifyKind(value, DateTimeKind.Utc);
+    }
 }

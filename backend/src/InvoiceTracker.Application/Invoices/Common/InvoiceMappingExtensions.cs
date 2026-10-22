@@ -4,7 +4,7 @@ namespace InvoiceTracker.Application.Invoices.Common;
 
 public static class InvoiceMappingExtensions
 {
-    public static InvoiceDto ToDto(this Invoice invoice) =>
+    public static InvoiceDto ToDto(this Invoice invoice, string? clientName = null) =>
         new(
             invoice.Id,
             invoice.ClientId,
@@ -20,7 +20,8 @@ public static class InvoiceMappingExtensions
             invoice.Notes,
             invoice.LastModifiedDate,
             invoice.ArchivedAt,
-            invoice.LineItems.Select(li => li.ToDto()).ToList());
+            invoice.LineItems.Select(li => li.ToDto()).ToList(),
+            clientName);
 
     public static InvoiceLineItemDto ToDto(this InvoiceLineItem lineItem) =>
         new(lineItem.Id, lineItem.Description, lineItem.Quantity, lineItem.UnitPrice, lineItem.LineTotal);
