@@ -1,13 +1,25 @@
+import { useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
 import { useDashboardSummaryQuery } from "@/hooks/useDashboard";
 import { cn, formatCurrency } from "@/lib/utils";
 import type { InvoiceStatus } from "@/types/invoice";
 
+// Shared affordance for the clickable stat/status cards below: a real <button>, not a div with
+// onClick, so it's focusable and keyboard-activatable (Enter/Space) by default — see CLAUDE.md's
+// accessibility conventions. Hover/focus styling stays subtle per this project's design conventions.
+const CLICKABLE_CARD_CLASSES =
+  "w-full text-left transition-colors hover:border-foreground/30 hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+
 // requirements.md explicitly scopes "advanced reporting/analytics beyond the basic dashboard
 // summary" out — plain stat cards, no chart library, nothing to configure.
 export function DashboardPage() {
+  const navigate = useNavigate();
   const { data, isLoading, isError } = useDashboardSummaryQuery();
+
+  const goToInvoicesFilteredByStatus = (status: InvoiceStatus) => {
+    navigate("/invoices", { state: { initialStatus: status } });
+  };
 
   return (
     <div className="space-y-6">
@@ -31,9 +43,12 @@ export function DashboardPage() {
               <p className="mt-1 text-xs text-muted-foreground">Sum of Unpaid + Overdue invoices</p>
             </div>
 
-            <div
+            <button
+              type="button"
+              onClick={() => goToInvoicesFilteredByStatus("Overdue")}
               className={cn(
                 "rounded-lg border p-6",
+                CLICKABLE_CARD_CLASSES,
                 data.overdueCount > 0
                   ? "border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-500/10"
                   : "border-border",
@@ -49,17 +64,22 @@ export function DashboardPage() {
                 {data.overdueCount}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">Needs attention</p>
-            </div>
+            </button>
           </div>
 
           <div className="space-y-3">
             <h2 className="text-lg font-medium">Invoices by status</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
               {data.countsByStatus.map(({ status, count }) => (
-                <div key={status} className="rounded-lg border border-border p-4">
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => goToInvoicesFilteredByStatus(status as InvoiceStatus)}
+                  className={cn("rounded-lg border border-border p-4", CLICKABLE_CARD_CLASSES)}
+                >
                   <InvoiceStatusBadge status={status as InvoiceStatus} />
                   <p className="mt-2 text-2xl font-semibold">{count}</p>
-                </div>
+                </button>
               ))}
             </div>
           </div>

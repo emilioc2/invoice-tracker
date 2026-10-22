@@ -1,6 +1,6 @@
 import { MoreHorizontal } from "lucide-react";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import * as invoicesApi from "@/api/invoicesApi";
 import { InvoiceFilters, type InvoiceFiltersValue } from "@/components/invoices/InvoiceFilters";
 import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
@@ -17,16 +17,40 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useArchiveInvoiceMutation, useInvoicesQuery } from "@/hooks/useInvoices";
 import { formatCurrency } from "@/lib/utils";
-import type { Invoice } from "@/types/invoice";
+import type { Invoice, InvoiceStatus } from "@/types/invoice";
 
 const PAGE_SIZE = 20;
 
+// Shape of the navigation state the Dashboard's status cards pass via
+// `navigate('/invoices', { state: { initialStatus } })` — see DashboardPage.tsx.
+interface InvoicesListNavigationState {
+  initialStatus?: InvoiceStatus;
+}
+
 export function InvoicesListPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [filters, setFilters] = useState<InvoiceFiltersValue>({});
   const [pageNumber, setPageNumber] = useState(1);
   const [archiveTarget, setArchiveTarget] = useState<Invoice | null>(null);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+
+  // One-time seed from Dashboard navigation: a status card passes `initialStatus` via router
+  // state so the list opens pre-filtered. Deliberately out of scope: syncing filters to/from the
+  // URL in general — this only consumes the one-shot navigation state, then clears it (via
+  // `replace`) so it isn't re-applied if the user later navigates back here through history.
+  useEffect(() => {
+    const navigationState = location.state as InvoicesListNavigationState | null;
+    const initialStatus = navigationState?.initialStatus;
+    if (initialStatus) {
+      setFilters((prev) => ({ ...prev, status: initialStatus }));
+      setPageNumber(1);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // Intentionally run once on mount only — this consumes a one-shot navigation payload, not a
+    // value that should be re-applied on every filters/location change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data, isLoading, isError } = useInvoicesQuery({
     ...filters,

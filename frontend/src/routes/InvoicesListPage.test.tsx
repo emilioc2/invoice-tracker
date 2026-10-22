@@ -108,6 +108,67 @@ describe("InvoicesListPage status filter", () => {
   });
 });
 
+describe("InvoicesListPage navigation-state seeding (from Dashboard status cards)", () => {
+  beforeEach(() => {
+    seedAuthenticatedSession();
+  });
+
+  function renderWithInitialStatusState(capturedUrls: string[]) {
+    server.use(
+      http.get("*/api/invoices", ({ request }) => {
+        capturedUrls.push(request.url);
+        return HttpResponse.json(EMPTY_INVOICES);
+      }),
+      http.get("*/api/clients", () => HttpResponse.json(EMPTY_CLIENTS)),
+    );
+
+    const queryClient = createTestQueryClient();
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <MemoryRouter
+            initialEntries={[{ pathname: "/invoices", state: { initialStatus: "Overdue" } }]}
+          >
+            <Routes>
+              <Route path="/invoices" element={<InvoicesListPage />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("seeds the status filter from location.state.initialStatus and resets to page 1", async () => {
+    const capturedUrls: string[] = [];
+    renderWithInitialStatusState(capturedUrls);
+
+    // The eventual, filtered request is what matters here — an earlier unfiltered request
+    // triggered by the first render (before the mount effect applies the seed) is expected.
+    await waitFor(() => {
+      const last = capturedUrls[capturedUrls.length - 1];
+      expect(last).toBeDefined();
+      expect(searchParamsOf(last).get("status")).toBe("Overdue");
+    });
+
+    const lastParams = searchParamsOf(capturedUrls[capturedUrls.length - 1]);
+    expect(lastParams.get("pageNumber")).toBe("1");
+
+    // The Select control itself reflects the seeded status.
+    expect(screen.getByRole("combobox", { name: /status/i })).toHaveTextContent("Overdue");
+  });
+
+  it("does not re-seed the filter on a plain navigation with no state (default unfiltered)", async () => {
+    const capturedUrls: string[] = [];
+    renderInvoicesListPage(capturedUrls);
+
+    await waitFor(() => expect(capturedUrls).toHaveLength(1));
+    expect(searchParamsOf(capturedUrls[0]).get("status")).toBeNull();
+    expect(screen.getByRole("combobox", { name: /status/i })).toHaveTextContent(
+      "All statuses",
+    );
+  });
+});
+
 describe("InvoicesListPage denormalized client name", () => {
   beforeEach(() => {
     seedAuthenticatedSession();
