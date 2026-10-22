@@ -40,9 +40,9 @@ const ACTION_CONFIG: Record<
     confirmLabel: "Cancel invoice",
   },
   archive: {
-    title: "Archive invoice?",
+    title: "Remove invoice?",
     description: "This hides the invoice from the invoices list. This can't be undone from here.",
-    confirmLabel: "Archive",
+    confirmLabel: "Remove",
   },
 };
 
@@ -151,7 +151,7 @@ export function InvoiceDetailPage() {
           )}
           {!isArchived && (
             <Button variant="destructive" onClick={() => setPendingAction("archive")}>
-              Archive
+              Remove
             </Button>
           )}
           <Button variant="outline" onClick={handleDownloadPdf} disabled={isDownloading}>

@@ -1,6 +1,7 @@
 import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import * as invoicesApi from "@/api/invoicesApi";
 import { InvoiceFilters, type InvoiceFiltersValue } from "@/components/invoices/InvoiceFilters";
 import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -25,6 +26,7 @@ export function InvoicesListPage() {
   const [filters, setFilters] = useState<InvoiceFiltersValue>({});
   const [pageNumber, setPageNumber] = useState(1);
   const [archiveTarget, setArchiveTarget] = useState<Invoice | null>(null);
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError } = useInvoicesQuery({
     ...filters,
@@ -33,6 +35,19 @@ export function InvoicesListPage() {
   });
 
   const archiveMutation = useArchiveInvoiceMutation();
+
+  const handleDownloadPdf = async (invoice: Invoice) => {
+    setDownloadingIds((prev) => new Set(prev).add(invoice.id));
+    try {
+      await invoicesApi.downloadPdf(invoice.id, invoice.invoiceNumber);
+    } finally {
+      setDownloadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(invoice.id);
+        return next;
+      });
+    }
+  };
 
   const columns: DataTableColumn<Invoice>[] = [
     { key: "invoiceNumber", header: "Invoice #", cell: (invoice) => invoice.invoiceNumber },
@@ -72,11 +87,22 @@ export function InvoicesListPage() {
               <DropdownMenuItem onSelect={() => navigate(`/invoices/${invoice.id}`)}>
                 View
               </DropdownMenuItem>
+              {invoice.status === "Draft" && (
+                <DropdownMenuItem onSelect={() => navigate(`/invoices/${invoice.id}/edit`)}>
+                  Edit
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                disabled={downloadingIds.has(invoice.id)}
+                onSelect={() => handleDownloadPdf(invoice)}
+              >
+                {downloadingIds.has(invoice.id) ? "Downloading…" : "Download PDF"}
+              </DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
                 onSelect={() => setArchiveTarget(invoice)}
               >
-                Archive
+                Remove
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -128,13 +154,13 @@ export function InvoicesListPage() {
         onOpenChange={(open) => {
           if (!open) setArchiveTarget(null);
         }}
-        title="Archive invoice?"
+        title="Remove invoice?"
         description={
           archiveTarget
             ? `"${archiveTarget.invoiceNumber}" will be hidden from this list. This can't be undone from here.`
             : ""
         }
-        confirmLabel="Archive"
+        confirmLabel="Remove"
         isConfirming={archiveMutation.isPending}
         onConfirm={async () => {
           if (!archiveTarget) return;
