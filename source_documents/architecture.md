@@ -62,6 +62,8 @@ backend/
 └── InvoiceTracker.sln
 ```
 
+**UI display note:** the `UserRole.Owner` enum value shown above (and the `"Owner"` string persisted in the `Users.Role` column) is unchanged. The frontend now displays this role to end users as "Admin" — a presentation-layer label only, implemented entirely in frontend display strings. Every other reference to "Owner" in this document (API routes, role checks, test plan, etc.) refers to this same internal/persisted value.
+
 **Indexing:** given the deliberately tight hosting budget (a single `t3.micro`), `Invoices` should carry a composite index on `(BusinessId, Status, DueDate)` — it's hit by the overdue scanner's periodic query, the filtered invoice list endpoint, and the dashboard summary. `Clients` and `Invoices` should also both index `(BusinessId, ArchivedAt)` since every list query filters on both.
 
 ## Domain invariants: centralized status transitions

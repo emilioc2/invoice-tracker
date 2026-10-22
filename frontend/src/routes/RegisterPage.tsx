@@ -60,7 +60,7 @@ export function RegisterPage() {
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-semibold">Register your business</h1>
           <p className="text-sm text-muted-foreground">
-            Create a business account — you&apos;ll be its Owner.
+            Create a business account — you&apos;ll be its Admin.
           </p>
         </div>
 
@@ -110,7 +110,7 @@ export function RegisterPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="ownerEmail">Your (Owner) login email</Label>
+            <Label htmlFor="ownerEmail">Your (Admin) login email</Label>
             <Input
               id="ownerEmail"
               type="email"
