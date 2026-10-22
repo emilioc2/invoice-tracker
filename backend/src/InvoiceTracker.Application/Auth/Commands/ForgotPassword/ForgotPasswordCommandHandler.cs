@@ -1,4 +1,5 @@
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Models;
 using MediatR;
 
 namespace InvoiceTracker.Application.Auth.Commands.ForgotPassword;
@@ -27,7 +28,12 @@ public class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswordComman
         if (token is not null)
         {
             var body = $"Use the following token to reset your Eternity Invoicing password: {token}";
-            await _emailSender.SendAsync(request.Email, "Reset your Eternity Invoicing password", body, cancellationToken);
+            await _emailSender.SendAsync(
+                request.Email,
+                "Reset your Eternity Invoicing password",
+                body,
+                Array.Empty<EmailAttachment>(),
+                cancellationToken);
         }
 
         return Unit.Value;

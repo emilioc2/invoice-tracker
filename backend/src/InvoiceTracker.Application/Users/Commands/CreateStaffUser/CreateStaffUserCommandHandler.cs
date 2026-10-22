@@ -1,5 +1,6 @@
 using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Models;
 using InvoiceTracker.Application.Users.Common;
 using InvoiceTracker.Domain.Entities;
 using InvoiceTracker.Domain.Enums;
@@ -73,6 +74,7 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
             "Your Eternity Invoicing account",
             $"An account has been created for you. Temporary password: {tempPassword}. " +
             "Please log in and change your password as soon as possible.",
+            Array.Empty<EmailAttachment>(),
             cancellationToken);
 
         return staffUser.ToDto();

@@ -4,6 +4,7 @@ public record NotificationDto(
     Guid Id,
     Guid InvoiceId,
     string Status,
+    string NotificationType,
     DateTime? SentAt,
     string Channel,
     string Message,

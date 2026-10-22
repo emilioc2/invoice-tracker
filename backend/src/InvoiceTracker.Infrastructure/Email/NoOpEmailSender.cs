@@ -1,4 +1,5 @@
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Models;
 using Microsoft.Extensions.Logging;
 
 namespace InvoiceTracker.Infrastructure.Email;
@@ -22,9 +23,23 @@ public class NoOpEmailSender : IEmailSender
         _logger = logger;
     }
 
-    public Task SendAsync(string to, string subject, string body, CancellationToken cancellationToken = default)
+    public Task SendAsync(
+        string to,
+        string subject,
+        string body,
+        IReadOnlyList<EmailAttachment> attachments,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("[NoOpEmailSender] Would send to {To} | Subject: {Subject} | Body: {Body}", to, subject, body);
+
+        foreach (var attachment in attachments)
+        {
+            _logger.LogInformation(
+                "[NoOpEmailSender] Would attach {FileName} ({ByteCount} bytes)",
+                attachment.FileName,
+                attachment.Content.Length);
+        }
+
         return Task.CompletedTask;
     }
 }

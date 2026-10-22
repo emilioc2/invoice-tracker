@@ -11,13 +11,15 @@ backend/
 ├── src/
 │   ├── InvoiceTracker.Domain/              # Entities, enums, domain logic — zero external dependencies
 │   │   ├── Entities/                       # Business, User, Client, Invoice, InvoiceLineItem, Notification
-│   │   ├── Enums/                          # InvoiceStatus (Draft/Unpaid/Paid/Overdue/Cancelled), UserRole (Owner/Staff)
+│   │   ├── Enums/                          # InvoiceStatus (Draft/Unpaid/Paid/Overdue/Cancelled), UserRole (Owner/Staff), NotificationType (OverdueReminder/InvoiceSent)
 │   │   └── Events/                         # InvoiceOverdueEvent (the Kafka payload's domain-side shape)
 │   ├── InvoiceTracker.Application/          # Use cases + ports (interfaces), DTOs, validation
 │   │   ├── Common/
-│   │   │   ├── Interfaces/                 # IEmailSender, IEventPublisher, IPdfGenerator, ICurrentUserService
-│   │   │   └── Behaviors/
-│   │   │       └── ValidationBehavior.cs   # runs the matching FluentValidation validator before any handler executes
+│   │   │   ├── Interfaces/                 # IEmailSender, IEventPublisher, IPdfGenerator, IInvoicePdfService, ICurrentUserService
+│   │   │   ├── Behaviors/
+│   │   │   │   └── ValidationBehavior.cs   # runs the matching FluentValidation validator before any handler executes
+│   │   │   ├── Models/                     # EmailAttachment (FileName, Content: byte[], ContentType) — passed to IEmailSender.SendAsync
+│   │   │   └── Services/                   # InvoicePdfService : IInvoicePdfService — assembles Invoice+LineItems+Client+Business then calls IPdfGenerator; shared by GetInvoicePdfQueryHandler, SendInvoiceCommandHandler, ResendInvoiceEmailCommandHandler
 │   │   ├── Clients/
 │   │   │   ├── Commands/
 │   │   │   │   ├── CreateClient/           # CreateClientCommand.cs, CreateClientCommandHandler.cs, CreateClientCommandValidator.cs
@@ -31,6 +33,7 @@ backend/
 │   │   │   │   ├── CreateInvoice/
 │   │   │   │   ├── UpdateInvoice/
 │   │   │   │   ├── SendInvoice/            # Draft → Unpaid
+│   │   │   │   ├── ResendInvoiceEmail/        # re-sends the invoice email, no status transition
 │   │   │   │   ├── MarkInvoicePaid/
 │   │   │   │   ├── CancelInvoice/
 │   │   │   │   └── ArchiveInvoice/
@@ -49,7 +52,7 @@ backend/
 │   │   ├── Persistence/                    # ApplicationDbContext, EF entity configs, Migrations
 │   │   ├── Identity/                       # ASP.NET Core Identity wiring, JWT token generation
 │   │   ├── Messaging/                      # KafkaEventPublisher, OverdueNotificationConsumer (hosted service)
-│   │   ├── Email/                          # FormspreeEmailSender : IEmailSender
+│   │   ├── Email/                          # FormspreeEmailSender : IEmailSender (multipart/form-data upload for attachments), NoOpEmailSender : IEmailSender (logs attachment filename/size)
 │   │   └── Pdf/                            # QuestPdfInvoiceGenerator : IPdfGenerator
 │   └── InvoiceTracker.Api/                  # Controllers, composition root, Program.cs
 │       ├── Controllers/                    # AuthController, UsersController, ClientsController, InvoicesController, NotificationsController, DashboardController
@@ -159,7 +162,8 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 | GET | `/api/invoices/{id}` | Single invoice incl. line items |
 | POST | `/api/invoices` | Create (always starts as `Draft`, with line items). `IssueDate` is not part of the create payload — it doesn't exist yet |
 | PUT | `/api/invoices/{id}` | Update — only while `Draft`. Once sent, line items/due date/client are locked (mirrors a real invoice being a fixed record once issued); changes after sending mean `Cancel` + create a new one |
-| POST | `/api/invoices/{id}/send` | `Draft → Unpaid`; sets `IssueDate = now` server-side (immutable from this point on — never directly editable via `PUT`, before or after sending) |
+| POST | `/api/invoices/{id}/send` | `Draft → Unpaid`; sets `IssueDate = now` server-side (immutable from this point on). Also attempts to email the client the invoice PDF + details. The status transition always succeeds independently of email outcome — response is `SendInvoiceResult` reporting `EmailDelivery.Status` (`Sent`/`Failed`) separately from the (unconditional, given valid input) status change |
+| POST | `/api/invoices/{id}/resend-email` | Re-sends the invoice PDF + details email, no status transition. Valid for any status except `Draft` (`400` otherwise). Response is `ResendInvoiceEmailResult` reporting only the email delivery outcome |
 | POST | `/api/invoices/{id}/mark-paid` | `Unpaid/Overdue → Paid` |
 | POST | `/api/invoices/{id}/cancel` | `Draft/Unpaid → Cancelled` |
 | DELETE | `/api/invoices/{id}` | Archives (sets `ArchivedAt`) |
@@ -247,6 +251,49 @@ Because the `Pending` row is written *before* the send is attempted, a crash can
 ### Kafka topic configuration
 
 Single-broker KRaft mode (no Zookeeper container) given this runs on one small VM: 1 partition (or 3 if headroom allows, for future horizontal scaling of the consumer), replication factor 1.
+
+## Invoice send/resend email delivery
+
+Unlike the overdue-reminder pipeline, invoice Send and Resend are **foreground, user-initiated actions**, so they skip the outbox+Kafka pattern and call `IEmailSender.SendAsync(...)` directly from the command handler — the same pattern already used by `ForgotPasswordCommandHandler`/`CreateStaffUserCommandHandler`. Outbox+Kafka's crash-safety machinery exists to make an *unattended background job* (the overdue scanner) safe; here, a failure surfaces synchronously to the user, who can just retry (via Resend), so the added complexity isn't justified.
+
+**`IEmailSender` interface change:**
+```csharp
+public interface IEmailSender
+{
+    Task<bool> SendAsync(string to, string subject, string body, IReadOnlyList<EmailAttachment> attachments, CancellationToken ct);
+}
+
+public record EmailAttachment(string FileName, byte[] Content, string ContentType);
+```
+Existing callers with no attachment (`ForgotPasswordCommandHandler`, `CreateStaffUserCommandHandler`) pass `Array.Empty<EmailAttachment>()`. `FormspreeEmailSender` must switch from a plain JSON POST to `multipart/form-data` to actually upload the file(s); `NoOpEmailSender` logs each attachment's filename and byte count instead of sending; any test double implementing `IEmailSender` needs the new parameter.
+
+**`IInvoicePdfService` (new, Application-layer):**
+```csharp
+public interface IInvoicePdfService
+{
+    Task<byte[]> GenerateAsync(Guid invoiceId, Guid businessId, CancellationToken ct);
+}
+```
+Implemented in `Application/Common/Services/` (not Infrastructure — it only orchestrates `IApplicationDbContext` for the Invoice+LineItems+Client+Business assembly query and `IPdfGenerator` for rendering, both of which are already Application-layer-visible dependencies). `GetInvoicePdfQueryHandler`, `SendInvoiceCommandHandler`, and `ResendInvoiceEmailCommandHandler` all depend on this instead of each assembling the query themselves.
+
+**`SendInvoiceCommandHandler` sequence (replaces the plain status-flip):**
+1. Load the invoice (`BusinessId`-scoped), call `Invoice.TransitionTo(InvoiceStatus.Unpaid)` (sets `IssueDate = now` as already specified), save. This is the transition proper — if it fails (e.g. invoice not in `Draft`), the whole command fails as it always has, and nothing below runs.
+2. Once committed, call `IInvoicePdfService.GenerateAsync(...)`.
+3. Insert a `Notification` row (`Status = Pending`, `NotificationType = InvoiceSent`, `SourceEventId = Guid.NewGuid()`), then call `IEmailSender.SendAsync(client.Email, subject, bodyWithInvoiceDetails, [pdfAttachment], ct)`.
+4. On success, update the row to `Sent`, `SentAt = now`; on failure (exception or non-success result), update to `Failed`. Either outcome is returned alongside the (already-committed) invoice — the email step never rolls back step 1.
+
+Result shape:
+```csharp
+public record EmailDeliveryResult(string Status, Guid NotificationId); // "Sent" | "Failed"
+public record SendInvoiceResult(InvoiceDto Invoice, EmailDeliveryResult EmailDelivery);
+```
+
+**`ResendInvoiceEmailCommandHandler` (new):**
+1. Load the invoice (`BusinessId`-scoped, via the shared lookup helper). If `Status == Draft`, reject with `400` — nothing to resend yet.
+2. Call `IInvoicePdfService.GenerateAsync(...)`.
+3. Insert a new `Notification` row (`Pending`, `NotificationType = InvoiceSent`, fresh `SourceEventId`), call `IEmailSender.SendAsync(...)`, update to `Sent`/`Failed` — identical pattern to Send's steps 3-4, with no preceding status transition and no interaction with the Draft-only edit lock (resending never touches invoice content).
+
+Result shape: `public record ResendInvoiceEmailResult(EmailDeliveryResult EmailDelivery);`
 
 ## Frontend architecture
 
@@ -339,6 +386,9 @@ Pure domain/application logic, no database, no network:
 - FluentValidation validators — e.g. `CreateInvoiceCommandValidator` rejects empty line items, negative quantity/price, missing `ClientId`
 - Command handlers — using EF Core's in-memory provider (fast, no real Postgres) rather than mocking `DbContext` directly: e.g. `MarkInvoicePaidCommandHandler` throws for an invoice not in `Unpaid`/`Overdue`
 - Kafka pipeline components tested in isolation: `OverdueInvoiceScannerService`, `OutboxRelayService`, and `OverdueNotificationConsumer` each get unit tests against a mocked `IEventPublisher`/`IEmailSender` — no real Kafka broker in the test suite. For the consumer specifically: a case where no `Notification` exists (inserts `Pending`, sends, updates to `Sent`), a case where one exists as `Sent` (skips, never calls `IEmailSender`), and a case where one exists as `Pending` (retries the send using the existing row) — this last case is what proves the crash-safety design actually holds. End-to-end confidence that the full chain works together comes from manual verification against the real `docker-compose` stack, not an automated test.
+- `SendInvoiceCommandHandler`: status transition still succeeds and persists when `IEmailSender` throws/returns failure; `Notification` recorded as `Sent` on success and `Failed` on failure, in both cases `NotificationType = InvoiceSent`
+- `ResendInvoiceEmailCommandHandler`: rejects a `Draft` invoice with no side effects; succeeds for `Unpaid`/`Overdue`/`Paid`/`Cancelled` without mutating invoice status; records a new `Notification` with a fresh `SourceEventId` each call
+- `FormspreeEmailSender`: builds a correct `multipart/form-data` request when attachments are present (against a fake `HttpMessageHandler`, no real Formspree call)
 
 ### Backend integration tests (`InvoiceTracker.IntegrationTests` — xUnit, `WebApplicationFactory`, Testcontainers for Postgres)
 
@@ -350,6 +400,9 @@ Full HTTP pipeline, real database, real migrations:
 - Role-based authorization — Staff attempting `POST /api/users` → `403`; Owner succeeds; Owner attempting to deactivate their own account → `400`
 - Dashboard summary — seed invoices across statuses, assert the numbers match
 - PDF export — response is a valid PDF (content-type + `%PDF` magic bytes), not a visual/content assertion
+- `POST /api/invoices/{id}/send` response includes `EmailDelivery.Status`; invoice transitions to `Unpaid` even when the test's fake `IEmailSender` is configured to fail
+- `POST /api/invoices/{id}/resend-email` → `400` for a `Draft` invoice, `200` + new `Notification` row for a non-`Draft` one
+- `GET /api/notifications` list DTO includes `NotificationType` and distinguishes `OverdueReminder` from `InvoiceSent` rows
 
 ### Frontend tests (Vitest, React Testing Library, MSW)
 

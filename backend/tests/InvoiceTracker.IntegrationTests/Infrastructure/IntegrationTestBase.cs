@@ -210,6 +210,7 @@ public abstract class IntegrationTestBase
             Id = Guid.NewGuid(),
             InvoiceId = invoiceId,
             Status = NotificationStatus.Sent,
+            NotificationType = NotificationType.OverdueReminder,
             SentAt = now,
             Channel = "Email",
             Message = "Seeded overdue notification",

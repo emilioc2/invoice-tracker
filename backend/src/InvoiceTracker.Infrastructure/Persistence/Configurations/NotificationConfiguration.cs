@@ -17,6 +17,14 @@ public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
             .HasConversion<string>()
             .HasMaxLength(20);
 
+        builder.Property(n => n.NotificationType)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            // Existing rows (pre-dating this column) all came from the overdue pipeline — see the
+            // AddNotificationType migration, which backfills them to this same default.
+            .HasDefaultValue(InvoiceTracker.Domain.Enums.NotificationType.OverdueReminder);
+
         builder.Property(n => n.Channel)
             .IsRequired()
             .HasMaxLength(50);

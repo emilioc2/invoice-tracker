@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using InvoiceTracker.Application.Clients.Common;
 using InvoiceTracker.Application.Common.Models;
+using InvoiceTracker.Application.Invoices.Commands.SendInvoice;
 using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.IntegrationTests.Infrastructure;
 
@@ -97,9 +98,9 @@ public class InvoiceCrudTests : IntegrationTestBase
 
         var sendResponse = await client.PostAsync($"/api/invoices/{created.Id}/send", null);
         sendResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var sent = await sendResponse.Content.ReadFromJsonAsync<InvoiceDto>();
-        sent!.Status.Should().Be("Unpaid");
-        sent.IssueDate.Should().NotBeNull();
+        var sent = await sendResponse.Content.ReadFromJsonAsync<SendInvoiceResult>();
+        sent!.Invoice.Status.Should().Be("Unpaid");
+        sent.Invoice.IssueDate.Should().NotBeNull();
 
         // Once Unpaid, the edit lock kicks in — PUT must fail, not silently succeed.
         var updateResponse = await client.PutAsJsonAsync($"/api/invoices/{created.Id}", new

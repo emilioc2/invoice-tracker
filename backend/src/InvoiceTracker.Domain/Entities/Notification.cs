@@ -7,6 +7,10 @@ public class Notification
     public Guid Id { get; set; }
     public Guid InvoiceId { get; set; }
     public NotificationStatus Status { get; set; } = NotificationStatus.Pending;
+
+    // OverdueReminder (automatic, Kafka overdue pipeline) or InvoiceSent (manual Send/Resend).
+    // See architecture.md's "Invoice send/resend email delivery" section.
+    public NotificationType NotificationType { get; set; }
     public DateTime? SentAt { get; set; }
     public string Channel { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;

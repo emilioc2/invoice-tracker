@@ -9,6 +9,7 @@ public static class NotificationMappingExtensions
             notification.Id,
             notification.InvoiceId,
             notification.Status.ToString(),
+            notification.NotificationType.ToString(),
             notification.SentAt,
             notification.Channel,
             notification.Message,

@@ -3,6 +3,7 @@ using InvoiceTracker.Application.Invoices.Commands.ArchiveInvoice;
 using InvoiceTracker.Application.Invoices.Commands.CancelInvoice;
 using InvoiceTracker.Application.Invoices.Commands.CreateInvoice;
 using InvoiceTracker.Application.Invoices.Commands.MarkInvoicePaid;
+using InvoiceTracker.Application.Invoices.Commands.ResendInvoiceEmail;
 using InvoiceTracker.Application.Invoices.Commands.SendInvoice;
 using InvoiceTracker.Application.Invoices.Commands.UpdateInvoice;
 using InvoiceTracker.Application.Invoices.Common;
@@ -77,9 +78,16 @@ public class InvoicesController : ControllerBase
     }
 
     [HttpPost("{id:guid}/send")]
-    public async Task<ActionResult<InvoiceDto>> Send(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult<SendInvoiceResult>> Send(Guid id, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new SendInvoiceCommand(id), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/resend-email")]
+    public async Task<ActionResult<ResendInvoiceEmailResult>> ResendEmail(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ResendInvoiceEmailCommand(id), cancellationToken);
         return Ok(result);
     }
 

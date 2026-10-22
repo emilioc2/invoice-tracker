@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Confluent.Kafka;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Models;
 using InvoiceTracker.Domain.Entities;
 using InvoiceTracker.Domain.Enums;
 using InvoiceTracker.Domain.Events;
@@ -177,6 +178,7 @@ public class OverdueNotificationConsumer : BackgroundService
                 Id = Guid.NewGuid(),
                 InvoiceId = @event.InvoiceId,
                 Status = NotificationStatus.Pending,
+                NotificationType = NotificationType.OverdueReminder,
                 Channel = "Email",
                 Message = message,
                 SourceEventId = @event.EventId
@@ -191,7 +193,12 @@ public class OverdueNotificationConsumer : BackgroundService
         bool sent;
         try
         {
-            await emailSender.SendAsync(@event.ClientEmail, $"Invoice {@event.InvoiceNumber} is overdue", message, cancellationToken);
+            await emailSender.SendAsync(
+                @event.ClientEmail,
+                $"Invoice {@event.InvoiceNumber} is overdue",
+                message,
+                Array.Empty<EmailAttachment>(),
+                cancellationToken);
             notification.Status = NotificationStatus.Sent;
             notification.SentAt = DateTime.UtcNow;
             sent = true;

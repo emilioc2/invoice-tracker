@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Models;
 
 namespace InvoiceTracker.IntegrationTests.Infrastructure;
 
@@ -11,6 +12,11 @@ namespace InvoiceTracker.IntegrationTests.Infrastructure;
 /// what was "sent" — e.g. pulling the password-reset token out of the forgot-password email body.
 /// Registered as a singleton (one instance for the whole test run, shared across requests), so the
 /// capture list is thread-safe.
+///
+/// <see cref="ShouldFail"/> lets a test force every subsequent <see cref="SendAsync"/> call to
+/// throw (mirroring the real <c>FormspreeEmailSender</c>'s exception-based failure signal), so the
+/// Send/Resend-email integration tests can prove the invoice status transition and the
+/// Notification row's outcome are correct even when email delivery fails.
 /// </summary>
 public class TestEmailSender : IEmailSender
 {
@@ -18,9 +24,22 @@ public class TestEmailSender : IEmailSender
 
     public IReadOnlyCollection<SentEmail> SentEmails => _sentEmails.ToArray();
 
-    public Task SendAsync(string to, string subject, string body, CancellationToken cancellationToken = default)
+    /// <summary>When true, every call to <see cref="SendAsync"/> throws instead of recording.</summary>
+    public bool ShouldFail { get; set; }
+
+    public Task SendAsync(
+        string to,
+        string subject,
+        string body,
+        IReadOnlyList<EmailAttachment> attachments,
+        CancellationToken cancellationToken = default)
     {
-        _sentEmails.Enqueue(new SentEmail(to, subject, body));
+        if (ShouldFail)
+        {
+            throw new InvalidOperationException("TestEmailSender configured to fail.");
+        }
+
+        _sentEmails.Enqueue(new SentEmail(to, subject, body, attachments));
         return Task.CompletedTask;
     }
 
@@ -33,4 +52,4 @@ public class TestEmailSender : IEmailSender
     }
 }
 
-public record SentEmail(string To, string Subject, string Body);
+public record SentEmail(string To, string Subject, string Body, IReadOnlyList<EmailAttachment> Attachments);

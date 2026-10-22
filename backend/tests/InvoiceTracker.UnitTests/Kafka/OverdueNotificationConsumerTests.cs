@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Models;
 using InvoiceTracker.Domain.Entities;
 using InvoiceTracker.Domain.Enums;
 using InvoiceTracker.Domain.Events;
@@ -77,7 +78,7 @@ public class OverdueNotificationConsumerTests
         var processedSuccessfully = await ProcessMessageAsyncWithResult(consumer, payload);
 
         await emailSender.Received(1).SendAsync(
-            @event.ClientEmail, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            @event.ClientEmail, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>());
 
         // This is the value the consume loop uses to decide whether to commit the Kafka offset:
         // true here means it would commit, which is correct once the row is Sent.
@@ -127,7 +128,7 @@ public class OverdueNotificationConsumerTests
         var processedSuccessfully = await ProcessMessageAsyncWithResult(consumer, payload);
 
         await emailSender.DidNotReceive().SendAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>());
 
         // The redelivery-skip path must still signal "safe to commit" — otherwise Kafka would
         // redeliver this message forever even though it was already fully processed.
@@ -177,7 +178,7 @@ public class OverdueNotificationConsumerTests
         // second one, so a crash between "recorded" and "sent" can never produce two Sent rows for
         // the same SourceEventId.
         await emailSender.Received(1).SendAsync(
-            @event.ClientEmail, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            @event.ClientEmail, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>());
 
         processedSuccessfully.Should().BeTrue();
 
@@ -196,7 +197,7 @@ public class OverdueNotificationConsumerTests
     {
         var emailSender = Substitute.For<IEmailSender>();
         emailSender
-            .SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Formspree endpoint returned 404"));
 
         var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services => services.AddSingleton(emailSender));
@@ -237,7 +238,7 @@ public class OverdueNotificationConsumerTests
         var processedSuccessfully = await ProcessMessageAsyncWithResult(consumer, "null");
 
         await emailSender.DidNotReceive().SendAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>());
 
         // A malformed message can never be turned into a valid Notification row no matter how many
         // times it's redelivered, so it must be treated as safe to commit (skip-and-move-on) rather

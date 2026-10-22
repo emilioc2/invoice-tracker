@@ -218,6 +218,13 @@ namespace InvoiceTracker.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<string>("NotificationType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("OverdueReminder");
+
                     b.Property<DateTime?>("SentAt")
                         .HasColumnType("timestamp with time zone");
 
