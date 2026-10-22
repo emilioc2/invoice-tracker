@@ -60,7 +60,7 @@ public class MultiTenancyIsolationTests : IntegrationTestBase
         // ...and, indirectly via an overdue invoice, a notification (seeded directly — see
         // IntegrationTestBase.SeedOverdueInvoiceWithNotificationAsync for why: no real Kafka broker
         // runs in this test suite).
-        var (_, overdueInvoiceId, _) = await SeedOverdueInvoiceWithNotificationAsync(authA.BusinessId);
+        var (_, overdueInvoiceId, _) = await SeedOverdueInvoiceWithNotificationAsync(authA.BusinessId!.Value);
 
         // Business B's JWT must not be able to reach any of the three.
         var clientResponse = await clientB.GetAsync($"/api/clients/{clientDto.Id}");

@@ -73,7 +73,10 @@ public class AuthTests : IntegrationTestBase
             Password = "P@ssw0rd123!"
         });
 
-        secondResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // Multi-business membership (requirements.md): an already-registered email is now a clean
+        // 409 Conflict directing the caller to log in and use "Add a business" instead, not a bare
+        // 400 from Identity rejecting a duplicate username further downstream.
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [Fact]

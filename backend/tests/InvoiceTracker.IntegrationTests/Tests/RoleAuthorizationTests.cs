@@ -84,7 +84,17 @@ public class RoleAuthorizationTests : IntegrationTestBase
     {
         var (ownerClient, ownerAuth) = await RegisterBusinessAsync("role-owner-self-deactivate");
 
-        var response = await ownerClient.DeleteAsync($"/api/users/{ownerAuth.UserId}");
+        // Resolves the Owner's own UserBusinessMembership.Id via GET /api/users rather than
+        // assuming it equals AuthResultDto.UserId (the identity id) — that equality is only a
+        // coincidence of today's "one new identity, one new membership, shared id" creation shape
+        // (see RegisterCommandHandler) and breaks once an identity can hold more than one
+        // membership (see requirements.md's "Multi-business membership"), since a route's `{id}`
+        // for user-management endpoints identifies a membership id, not an identity id.
+        var usersResponse = await ownerClient.GetAsync("/api/users");
+        var users = await usersResponse.Content.ReadFromJsonAsync<List<UserDto>>();
+        var ownerMembership = users!.Single(u => u.Email == ownerAuth.Email);
+
+        var response = await ownerClient.DeleteAsync($"/api/users/{ownerMembership.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }

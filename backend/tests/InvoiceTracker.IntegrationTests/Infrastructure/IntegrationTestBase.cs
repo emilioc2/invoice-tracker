@@ -38,7 +38,7 @@ public abstract class IntegrationTestBase
     /// </summary>
     private static string SeededInvoiceNumber(Guid invoiceId) => $"INV-S{invoiceId:N}"[..20];
 
-    protected static HttpClient Authorize(HttpClient client, string accessToken)
+    protected static HttpClient Authorize(HttpClient client, string? accessToken)
     {
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return client;

@@ -47,6 +47,25 @@ public interface IIdentityService
     Task<AuthenticatedIdentityDto?> ValidateCredentialsAsync(string email, string password);
 
     /// <summary>
+    /// Returns the existing identity's Id for <paramref name="email"/>, or null if no identity
+    /// exists for it yet. Used wherever a caller needs to branch on "does this email already have
+    /// an identity" without validating a password — e.g. <c>RegisterCommandHandler</c>'s
+    /// already-registered-email conflict check and <c>CreateStaffUserCommandHandler</c>'s
+    /// existing-identity attach path (see requirements.md's "Multi-business membership").
+    /// </summary>
+    Task<Guid?> FindUserIdByEmailAsync(string email);
+
+    /// <summary>
+    /// Returns the identity's current Email/MustChangePassword by Id (no password check — the
+    /// caller already holds other proof of identity, e.g. a validated preauth token or an
+    /// authenticated JWT), or null if no identity exists for <paramref name="userId"/>. Used by
+    /// <c>SelectBusinessCommandHandler</c>, <c>SwitchBusinessCommandHandler</c>, and
+    /// <c>AddBusinessCommandHandler</c> to build the usual <c>AuthResultDto</c> fields without a
+    /// second credential check.
+    /// </summary>
+    Task<AuthenticatedIdentityDto?> FindIdentityByIdAsync(Guid userId);
+
+    /// <summary>
     /// Resolves each requested identity's current email, keyed by Id — used wherever a
     /// <see cref="InvoiceTracker.Domain.Entities.UserBusinessMembership"/> needs to display its
     /// identity's email without that email being duplicated onto the membership row itself (see

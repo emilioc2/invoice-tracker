@@ -151,7 +151,7 @@ public class InvoiceEmailDeliveryTests : IntegrationTestBase
         // An OverdueReminder-type row (simulating the Kafka pipeline's eventual output — see
         // SeedOverdueInvoiceWithNotificationAsync's own doc comment for why this is seeded directly
         // rather than driven through a real Kafka broker).
-        await SeedOverdueInvoiceWithNotificationAsync(auth.BusinessId);
+        await SeedOverdueInvoiceWithNotificationAsync(auth.BusinessId!.Value);
 
         // An InvoiceSent-type row via the real Send endpoint.
         var createClientResponse = await client.PostAsJsonAsync("/api/clients", new

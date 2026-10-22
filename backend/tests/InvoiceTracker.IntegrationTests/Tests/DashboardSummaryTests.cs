@@ -70,8 +70,8 @@ public class DashboardSummaryTests : IntegrationTestBase
 
         // Two Overdue invoices (500 + 600 — outstanding), seeded directly since only the (disabled)
         // Kafka scanner sets this status in production.
-        await SeedInvoiceAsync(auth.BusinessId, clientDto.Id, InvoiceStatus.Overdue, 500m);
-        await SeedInvoiceAsync(auth.BusinessId, clientDto.Id, InvoiceStatus.Overdue, 600m);
+        await SeedInvoiceAsync(auth.BusinessId!.Value, clientDto.Id, InvoiceStatus.Overdue, 500m);
+        await SeedInvoiceAsync(auth.BusinessId!.Value, clientDto.Id, InvoiceStatus.Overdue, 600m);
 
         var summaryResponse = await client.GetAsync("/api/dashboard/summary");
         summaryResponse.StatusCode.Should().Be(HttpStatusCode.OK);

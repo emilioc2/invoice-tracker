@@ -44,7 +44,7 @@ public class TestEmailSender : IEmailSender
     }
 
     /// <summary>Finds the most recently sent email to <paramref name="to"/>, if any.</summary>
-    public SentEmail? FindLatestTo(string to)
+    public SentEmail? FindLatestTo(string? to)
     {
         return _sentEmails
             .Where(e => string.Equals(e.To, to, StringComparison.OrdinalIgnoreCase))

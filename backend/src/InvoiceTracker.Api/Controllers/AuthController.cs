@@ -1,8 +1,11 @@
+using InvoiceTracker.Application.Auth.Commands.AddBusiness;
 using InvoiceTracker.Application.Auth.Commands.ChangePassword;
 using InvoiceTracker.Application.Auth.Commands.ForgotPassword;
 using InvoiceTracker.Application.Auth.Commands.Login;
 using InvoiceTracker.Application.Auth.Commands.Register;
 using InvoiceTracker.Application.Auth.Commands.ResetPassword;
+using InvoiceTracker.Application.Auth.Commands.SelectBusiness;
+using InvoiceTracker.Application.Auth.Commands.SwitchBusiness;
 using InvoiceTracker.Application.Auth.Common;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -14,7 +17,17 @@ namespace InvoiceTracker.Api.Controllers;
 /// Auth routes. Register/login/forgot-password/reset-password are pre-auth and individually
 /// opt out of the app-wide "every endpoint requires a JWT" fallback policy via
 /// <see cref="AllowAnonymousAttribute"/> — deliberately per-action (not class-level) so that
-/// change-password, added later, requires a valid JWT like every other controller's routes.
+/// change-password/switch-business/businesses require a valid JWT like every other controller's
+/// routes. select-business is also <see cref="AllowAnonymousAttribute"/> (the caller has no normal
+/// JWT yet at this point — only the preauth token <c>LoginCommandHandler</c> handed back), but it is
+/// not a "skip auth entirely" route the way the other four are: the preauth token is a request-body
+/// field here (<c>{ preAuthToken, businessId }</c>), not an Authorization header, so
+/// <c>SelectBusinessCommandHandler</c> performs its own real signature/expiry/claim validation on it
+/// (see <see cref="InvoiceTracker.Application.Common.Interfaces.IJwtTokenGenerator.ValidatePreAuthToken"/>)
+/// rather than relying on (or needing) the standard JWT bearer pipeline for this one call. Separately,
+/// that same pipeline's <c>OnTokenValidated</c> event (see <c>DependencyInjection.AddJwtBearer</c>)
+/// rejects a preauth-claim-bearing token from authenticating as a normal Bearer token against *any*
+/// endpoint, including this one — its only valid use is this field.
 /// Stays thin: each action only builds a command and calls `_mediator.Send(...)`.
 /// </summary>
 [ApiController]
@@ -42,6 +55,48 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<AuthResultDto>> Login(LoginRequest request, CancellationToken cancellationToken)
     {
         var command = new LoginCommand(request.Email, request.Password);
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Completes a login that returned <c>requiresBusinessSelection: true</c>. See this class's own
+    /// doc comment for why this is <see cref="AllowAnonymousAttribute"/> yet still performs real
+    /// token validation (inside <c>SelectBusinessCommandHandler</c>), rather than skipping auth.
+    /// </summary>
+    [HttpPost("select-business")]
+    [AllowAnonymous]
+    public async Task<ActionResult<AuthResultDto>> SelectBusiness(SelectBusinessRequest request, CancellationToken cancellationToken)
+    {
+        var command = new SelectBusinessCommand(request.PreAuthToken, request.BusinessId);
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Requires a valid (normal, non-preauth) JWT. Switches the caller's active session to a
+    /// different one of their own active memberships, issuing a brand-new JWT — the previous token
+    /// is not revoked. See requirements.md's "Multi-business membership".
+    /// </summary>
+    [HttpPost("switch-business")]
+    [Authorize]
+    public async Task<ActionResult<AuthResultDto>> SwitchBusiness(SwitchBusinessRequest request, CancellationToken cancellationToken)
+    {
+        var command = new SwitchBusinessCommand(request.BusinessId);
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Requires a valid JWT ("Add a business" — requirements.md's "Multi-business membership").
+    /// Creates a new Business + a new Owner membership for the caller's existing identity (no new
+    /// identity/password), then behaves like switch-business into it.
+    /// </summary>
+    [HttpPost("businesses")]
+    [Authorize]
+    public async Task<ActionResult<AuthResultDto>> AddBusiness(AddBusinessRequest request, CancellationToken cancellationToken)
+    {
+        var command = new AddBusinessCommand(request.BusinessName, request.BusinessEmail);
         var result = await _mediator.Send(command, cancellationToken);
         return Ok(result);
     }
@@ -87,6 +142,12 @@ public class AuthController : ControllerBase
 public record RegisterRequest(string BusinessName, string BusinessEmail, string OwnerEmail, string Password);
 
 public record LoginRequest(string Email, string Password);
+
+public record SelectBusinessRequest(string PreAuthToken, Guid BusinessId);
+
+public record SwitchBusinessRequest(Guid BusinessId);
+
+public record AddBusinessRequest(string BusinessName, string BusinessEmail);
 
 public record ForgotPasswordRequest(string Email);
 

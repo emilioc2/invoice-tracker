@@ -14,8 +14,10 @@ namespace InvoiceTracker.Application.Auth.Commands.Register;
 /// credential-store row is written through <see cref="IIdentityService"/> (backed by UserManager,
 /// which shares the same registered DbContext instance). Wrapping the whole sequence in an
 /// explicit transaction means a failure partway through — e.g. a duplicate email rejected by
-/// Identity — rolls back the Business/membership rows too, rather than leaving an orphaned
-/// Business with no usable Owner account.
+/// Identity (now only a narrow race-condition backstop: the common case is already caught up front
+/// by the explicit <see cref="IIdentityService.FindUserIdByEmailAsync"/> conflict check below) —
+/// rolls back the Business/membership rows too, rather than leaving an orphaned Business with no
+/// usable Owner account.
 /// </summary>
 public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthResultDto>
 {
@@ -35,6 +37,17 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthResul
 
     public async Task<AuthResultDto> Handle(RegisterCommand request, CancellationToken cancellationToken)
     {
+        // Multi-business membership (requirements.md): registering with an email that already has
+        // an identity is rejected outright — the caller must log in and use "Add a business"
+        // instead, rather than this silently reusing or colliding with the existing identity.
+        // Checked before opening the transaction below since there's nothing to roll back yet.
+        var existingUserId = await _identityService.FindUserIdByEmailAsync(request.OwnerEmail);
+        if (existingUserId is not null)
+        {
+            throw new ConflictException(
+                "An account with this email already exists. Please log in and use \"Add a business\" instead.");
+        }
+
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
 
         var business = new Business

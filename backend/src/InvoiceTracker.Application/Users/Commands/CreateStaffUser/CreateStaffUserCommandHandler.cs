@@ -5,6 +5,7 @@ using InvoiceTracker.Application.Users.Common;
 using InvoiceTracker.Domain.Entities;
 using InvoiceTracker.Domain.Enums;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace InvoiceTracker.Application.Users.Commands.CreateStaffUser;
 
@@ -16,6 +17,11 @@ namespace InvoiceTracker.Application.Users.Commands.CreateStaffUser;
 /// rolls both back rather than leaving an orphaned membership row with no way to log in. The
 /// business already exists by this point (unlike Register, which creates it) — only the
 /// Owner-only "add a teammate" half applies here.
+///
+/// Per requirements.md's "Multi-business membership": if the invited email already has an identity
+/// (elsewhere, or even in this same business already), a new Staff membership is attached to that
+/// *existing* identity instead — no new identity/temp password, and a different notification email.
+/// If the invited email has no identity yet, behaves exactly as before.
 /// </summary>
 public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserCommand, UserDto>
 {
@@ -40,6 +46,55 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
     {
         var businessId = _currentUserService.BusinessId!.Value;
 
+        var existingUserId = await _identityService.FindUserIdByEmailAsync(request.Email);
+
+        return existingUserId is not null
+            ? await AttachMembershipToExistingIdentityAsync(existingUserId.Value, businessId, request.Email, cancellationToken)
+            : await CreateNewIdentityWithMembershipAsync(businessId, request.Email, cancellationToken);
+    }
+
+    /// <summary>
+    /// The invited email already has an identity (in this business or another) — attach a new
+    /// Staff membership to it. No new identity/temp password is created, and
+    /// <c>ApplicationUser.MustChangePassword</c> is left exactly as that identity's current value
+    /// already is (not touched here at all).
+    /// </summary>
+    private async Task<UserDto> AttachMembershipToExistingIdentityAsync(
+        Guid existingUserId, Guid businessId, string email, CancellationToken cancellationToken)
+    {
+        var alreadyMember = await _dbContext.UserBusinessMemberships
+            .AnyAsync(m => m.UserId == existingUserId && m.BusinessId == businessId, cancellationToken);
+        if (alreadyMember)
+        {
+            throw new ConflictException("This email already has a membership in this business.");
+        }
+
+        var membership = new UserBusinessMembership
+        {
+            Id = Guid.NewGuid(),
+            UserId = existingUserId,
+            BusinessId = businessId,
+            Role = UserRole.Staff
+            // Status defaults to UserStatus.Active via the entity's own default initializer.
+        };
+        _dbContext.UserBusinessMemberships.Add(membership);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var business = await _dbContext.Businesses.FirstAsync(b => b.Id == businessId, cancellationToken);
+
+        await _emailSender.SendAsync(
+            email,
+            $"You've been added to {business.Name}",
+            $"You've been added to {business.Name} on Eternity Invoicing. Log in with your existing password to get started.",
+            Array.Empty<EmailAttachment>(),
+            cancellationToken);
+
+        return membership.ToDto(email);
+    }
+
+    /// <summary>The invited email has no identity yet — behaves exactly as before this step.</summary>
+    private async Task<UserDto> CreateNewIdentityWithMembershipAsync(Guid businessId, string email, CancellationToken cancellationToken)
+    {
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
 
         // Fresh Guid shared by the membership's own Id and its UserId — same "one new identity,
@@ -64,7 +119,7 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
         // membership. mustChangePassword: true — must be cleared via ChangePasswordCommandHandler
         // before this Staff user gets normal access — see architecture.md's "Forced password
         // change for temp-password logins".
-        var identityResult = await _identityService.CreateUserAsync(staffId, request.Email, tempPassword, mustChangePassword: true);
+        var identityResult = await _identityService.CreateUserAsync(staffId, email, tempPassword, mustChangePassword: true);
         if (!identityResult.Succeeded)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -76,15 +131,15 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
         // Email send happens after commit (not inside the transaction) — there's nothing to roll
         // back it against, and a send failure here shouldn't undo the already-committed account.
         await _emailSender.SendAsync(
-            request.Email,
+            email,
             "Your Eternity Invoicing account",
             $"An account has been created for you. Temporary password: {tempPassword}. " +
             "Please log in and change your password as soon as possible.",
             Array.Empty<EmailAttachment>(),
             cancellationToken);
 
-        // request.Email is already on hand (it's what we just created the identity with) — no
-        // need to round-trip through IIdentityService just to read it back.
-        return staffMembership.ToDto(request.Email);
+        // email is already on hand (it's what we just created the identity with) — no need to
+        // round-trip through IIdentityService just to read it back.
+        return staffMembership.ToDto(email);
     }
 }

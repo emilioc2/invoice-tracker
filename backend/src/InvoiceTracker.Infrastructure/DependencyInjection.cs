@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using InvoiceTracker.Application.Common.Interfaces;
 using InvoiceTracker.Infrastructure.Email;
@@ -66,6 +67,28 @@ public static class DependencyInjection
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromMinutes(1)
+                };
+
+                // Preauth tokens (see IJwtTokenGenerator.GeneratePreAuthToken) are only ever valid
+                // as the request-body `preAuthToken` field of POST /api/auth/select-business —
+                // JwtTokenGenerator validates that one manually. Here, independently, any bearer
+                // token carrying the "preauth" claim is rejected from authenticating against every
+                // endpoint that goes through the normal JWT bearer pipeline (every protected route,
+                // and select-business too if someone tried presenting it as a header there instead
+                // of a body field) — see requirements.md's "Multi-business membership" and
+                // architecture.md's Auth routes for why a preauth token must never grant normal access.
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = context =>
+                    {
+                        var isPreAuthToken = context.Principal?.FindFirstValue("preauth") == "true";
+                        if (isPreAuthToken)
+                        {
+                            context.Fail("Pre-authentication tokens cannot be used to access protected resources.");
+                        }
+
+                        return Task.CompletedTask;
+                    }
                 };
             });
 

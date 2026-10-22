@@ -59,6 +59,11 @@ public class ExceptionHandlingMiddleware
                 payload = new { title = notFoundException.Message };
                 break;
 
+            case ConflictException conflictException:
+                context.Response.StatusCode = (int)HttpStatusCode.Conflict;
+                payload = new { title = conflictException.Message };
+                break;
+
             case BadRequestException badRequestException:
                 context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
                 payload = new { title = badRequestException.Message };

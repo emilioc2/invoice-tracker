@@ -48,6 +48,18 @@ public class IdentityService : IIdentityService
             : null;
     }
 
+    public async Task<Guid?> FindUserIdByEmailAsync(string email)
+    {
+        var user = await _userManager.FindByEmailAsync(email);
+        return user?.Id;
+    }
+
+    public async Task<AuthenticatedIdentityDto?> FindIdentityByIdAsync(Guid userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        return user is null ? null : new AuthenticatedIdentityDto(user.Id, user.Email ?? string.Empty, user.MustChangePassword);
+    }
+
     public async Task<IReadOnlyDictionary<Guid, string>> GetEmailsByUserIdsAsync(IEnumerable<Guid> userIds)
     {
         var idSet = userIds.ToHashSet();
