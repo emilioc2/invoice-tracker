@@ -1,4 +1,4 @@
-# Business Invoice Tracker — Architecture Document
+# Eternity Invoicing — Architecture Document
 
 Companion to `requirements.md`. Captures internal structure and API design decisions.
 

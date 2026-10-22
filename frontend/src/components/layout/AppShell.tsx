@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <span className="text-lg font-semibold">Invoice Tracker</span>
+          <span className="text-lg font-semibold">Eternity Invoicing</span>
           <nav className="flex items-center gap-4">
             {navItems.map((item) => (
               <NavLink

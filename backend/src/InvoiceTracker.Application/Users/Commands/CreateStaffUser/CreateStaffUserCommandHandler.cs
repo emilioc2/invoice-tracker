@@ -70,7 +70,7 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
         // back it against, and a send failure here shouldn't undo the already-committed account.
         await _emailSender.SendAsync(
             staffUser.Email,
-            "Your Invoice Tracker account",
+            "Your Eternity Invoicing account",
             $"An account has been created for you. Temporary password: {tempPassword}. " +
             "Please log in and change your password as soon as possible.",
             cancellationToken);

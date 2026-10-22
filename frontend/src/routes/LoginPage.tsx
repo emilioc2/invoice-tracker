@@ -50,7 +50,7 @@ export function LoginPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-2 text-center">
           <h1 className="text-2xl font-semibold">Log in</h1>
-          <p className="text-sm text-muted-foreground">Sign in to your Invoice Tracker account.</p>
+          <p className="text-sm text-muted-foreground">Sign in to your Eternity Invoicing account.</p>
         </div>
 
         {state?.resetSuccess && (

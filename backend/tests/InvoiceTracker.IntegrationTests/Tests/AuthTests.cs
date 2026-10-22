@@ -140,7 +140,7 @@ public class AuthTests : IntegrationTestBase
         sentEmail.Should().NotBeNull("ForgotPassword should have sent a reset token via IEmailSender");
 
         // Matches ForgotPasswordCommandHandler's email body:
-        // "Use the following token to reset your Invoice Tracker password: {token}".
+        // "Use the following token to reset your Eternity Invoicing password: {token}".
         var tokenMatch = Regex.Match(sentEmail!.Body, "password: (?<token>.+)$");
         tokenMatch.Success.Should().BeTrue("the fake email body should contain the reset token");
         var resetToken = tokenMatch.Groups["token"].Value;

@@ -1,8 +1,8 @@
-# Business Invoice Tracker — Requirements Document
+# Eternity Invoicing — Requirements Document
 
 ## Overview
 
-Business Invoice Tracker is a multi-tenant web application that allows businesses to manage clients and invoices, track payment status through a defined workflow, and automatically trigger notifications when invoices become overdue.
+Eternity Invoicing is a multi-tenant web application that allows businesses to manage clients and invoices, track payment status through a defined workflow, and automatically trigger notifications when invoices become overdue.
 
 ## Tech & infrastructure decisions
 
