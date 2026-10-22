@@ -85,12 +85,6 @@ public class QuestPdfInvoiceGenerator : IPdfGenerator
                 {
                     datesColumn.Item().AlignRight().Text(text =>
                     {
-                        text.Span("Created: ").SemiBold();
-                        text.Span(invoice.CreatedAtDate.ToString("yyyy-MM-dd"));
-                    });
-
-                    datesColumn.Item().AlignRight().Text(text =>
-                    {
                         text.Span("Issue Date: ").SemiBold();
                         text.Span(invoice.IssueDate?.ToString("yyyy-MM-dd") ?? "-");
                     });
