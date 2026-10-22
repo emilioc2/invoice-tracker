@@ -24,4 +24,18 @@ internal static class PrivateMethodInvoker
             _ => throw new InvalidOperationException($"{methodName} did not return a Task.")
         };
     }
+
+    /// <summary>
+    /// Same as <see cref="InvokeAsync"/>, but for a private method whose declared return type is
+    /// <see cref="Task{T}"/> and whose result the caller needs (e.g. asserting on the bool a
+    /// consume-loop uses to decide whether to commit a Kafka offset).
+    /// </summary>
+    public static async Task<T> InvokeAsync<T>(object target, string methodName, params object?[] args)
+    {
+        var task = InvokeAsync(target, methodName, args);
+        await task;
+        var resultProperty = task.GetType().GetProperty("Result")
+            ?? throw new InvalidOperationException($"{methodName}'s returned Task has no Result property.");
+        return (T)resultProperty.GetValue(task)!;
+    }
 }

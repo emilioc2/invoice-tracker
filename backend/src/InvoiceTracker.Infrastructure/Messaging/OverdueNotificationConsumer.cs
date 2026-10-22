@@ -48,12 +48,19 @@ public class OverdueNotificationConsumer : BackgroundService
 
     private void ConsumeLoop(CancellationToken stoppingToken)
     {
+        // EnableAutoCommit is deliberately false: librdkafka's auto-commit timer advances the
+        // committed offset based purely on a message having been returned from Consume(), with no
+        // regard for whether this consumer's Pending-row-write / send / Sent-row-update has
+        // actually finished. That breaks the crash-safety guarantee the Pending-before-send design
+        // relies on (a crash could leave the offset committed with no Pending row to retry, so the
+        // notification is silently dropped). Instead, the offset for each message is committed
+        // manually below, only once ProcessMessageAsync has fully finished for it.
         var config = new ConsumerConfig
         {
             BootstrapServers = _settings.BootstrapServers,
             GroupId = _settings.ConsumerGroupId,
             AutoOffsetReset = AutoOffsetReset.Earliest,
-            EnableAutoCommit = true
+            EnableAutoCommit = false
         };
 
         using var consumer = new ConsumerBuilder<string, string>(config).Build();
@@ -88,10 +95,31 @@ public class OverdueNotificationConsumer : BackgroundService
                     // Deliberately synchronous-wait: this loop already runs on its own dedicated
                     // thread (see ExecuteAsync), and Confluent.Kafka's own Consume() call is
                     // itself blocking, so there's no async context above this to free up.
-                    ProcessMessageAsync(result.Message.Value, stoppingToken).GetAwaiter().GetResult();
+                    var processedSuccessfully =
+                        ProcessMessageAsync(result.Message.Value, stoppingToken).GetAwaiter().GetResult();
+
+                    if (processedSuccessfully)
+                    {
+                        // Only commit once the Pending-row-write / send / Sent-row-update sequence
+                        // has actually finished for this message — never ahead of it.
+                        consumer.Commit(result);
+                    }
+                    else
+                    {
+                        // The Notification ended up Failed (email send threw): leave the offset
+                        // uncommitted so Kafka can redeliver this message, which is the only retry
+                        // path Failed rows get per the design (see ProcessMessageAsync's XML doc).
+                        _logger.LogWarning(
+                            "Notification ended up Failed for invoice-overdue message at offset {Offset}; " +
+                            "not committing so Kafka can redeliver it.",
+                            result.Offset);
+                    }
                 }
                 catch (Exception ex)
                 {
+                    // Deliberately not committing here either: an exception means we can't be sure
+                    // the Pending row was ever written/updated, so relying on Kafka redelivery (by
+                    // leaving the offset uncommitted) is what keeps this crash-safe.
                     _logger.LogError(
                         ex,
                         "Failed to process invoice-overdue message at offset {Offset}; relying on Kafka redelivery.",
@@ -105,14 +133,21 @@ public class OverdueNotificationConsumer : BackgroundService
         }
     }
 
-    private async Task ProcessMessageAsync(string payload, CancellationToken cancellationToken)
+    /// <summary>
+    /// Returns whether the offset for this message is safe to commit: <c>true</c> once the
+    /// Notification row has reached <see cref="NotificationStatus.Sent"/> (including the
+    /// already-processed skip case), <c>false</c> if it ended up <see cref="NotificationStatus.Failed"/>
+    /// — the caller must leave the offset uncommitted in that case so Kafka redelivery remains the
+    /// retry path for Failed rows, per this class's crash-safety design.
+    /// </summary>
+    private async Task<bool> ProcessMessageAsync(string payload, CancellationToken cancellationToken)
     {
         var @event = JsonSerializer.Deserialize<InvoiceOverdueEvent>(payload, JsonOptions);
 
         if (@event is null)
         {
             _logger.LogWarning("Could not deserialize invoice-overdue payload: {Payload}", payload);
-            return;
+            return true;
         }
 
         using var scope = _scopeFactory.CreateScope();
@@ -127,7 +162,7 @@ public class OverdueNotificationConsumer : BackgroundService
             // Ordinary at-least-once redelivery of an event we already fully processed — never
             // call IEmailSender again for it.
             _logger.LogInformation("Notification for event {EventId} already Sent; skipping.", @event.EventId);
-            return;
+            return true;
         }
 
         var message =
@@ -153,18 +188,22 @@ public class OverdueNotificationConsumer : BackgroundService
         // else: an existing Pending row means a previous attempt crashed between recording and
         // sending — proceed using that same row rather than inserting a second one.
 
+        bool sent;
         try
         {
             await emailSender.SendAsync(@event.ClientEmail, $"Invoice {@event.InvoiceNumber} is overdue", message, cancellationToken);
             notification.Status = NotificationStatus.Sent;
             notification.SentAt = DateTime.UtcNow;
+            sent = true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send overdue notification email for invoice {InvoiceId}.", @event.InvoiceId);
             notification.Status = NotificationStatus.Failed;
+            sent = false;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        return sent;
     }
 }
