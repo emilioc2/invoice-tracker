@@ -27,25 +27,29 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, AuthResultDto>
 
     public async Task<AuthResultDto> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        var userId = await _identityService.ValidateCredentialsAsync(request.Email, request.Password);
-        if (userId is null)
+        var identity = await _identityService.ValidateCredentialsAsync(request.Email, request.Password);
+        if (identity is null)
         {
             throw new AuthenticationFailedException(InvalidCredentialsMessage);
         }
 
-        var user = await _dbContext.BusinessUsers
-            .FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+        // This step is a pure restructure (1:1 identity-to-membership still holds for every
+        // existing account) — multi-membership selection is a later build-order step (see
+        // requirements.md's "Multi-business membership"), so exactly one membership is expected
+        // here and FirstOrDefaultAsync is deliberately used rather than SingleOrDefaultAsync.
+        var membership = await _dbContext.UserBusinessMemberships
+            .FirstOrDefaultAsync(m => m.UserId == identity.Id, cancellationToken);
 
-        // Credentials matched the Identity store but there's no correlated (active) Domain User
+        // Credentials matched the Identity store but there's no correlated (active) membership
         // row — treat identically to a bad password rather than leaking which part failed.
-        if (user is null || user.Status != UserStatus.Active)
+        if (membership is null || membership.Status != UserStatus.Active)
         {
             throw new AuthenticationFailedException(InvalidCredentialsMessage);
         }
 
-        var token = _jwtTokenGenerator.GenerateToken(user.Id, user.BusinessId, user.Role.ToString(), user.Email);
+        var token = _jwtTokenGenerator.GenerateToken(identity.Id, membership.BusinessId, membership.Role.ToString(), identity.Email);
 
         return new AuthResultDto(
-            token.AccessToken, token.ExpiresAtUtc, user.Id, user.BusinessId, user.Email, user.Role.ToString(), user.MustChangePassword);
+            token.AccessToken, token.ExpiresAtUtc, identity.Id, membership.BusinessId, identity.Email, membership.Role.ToString(), identity.MustChangePassword);
     }
 }

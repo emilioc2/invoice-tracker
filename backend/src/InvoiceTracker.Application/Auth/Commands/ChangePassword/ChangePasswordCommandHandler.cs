@@ -1,31 +1,28 @@
 using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace InvoiceTracker.Application.Auth.Commands.ChangePassword;
 
 /// <summary>
 /// Resolves the authenticated caller via <see cref="ICurrentUserService"/> (never a
-/// client-supplied id — same pattern as every other authenticated handler), verifies
-/// <see cref="ChangePasswordCommand.CurrentPassword"/> and changes the credential-store password
-/// through <see cref="IIdentityService.ChangePasswordAsync"/>, then — on success — clears
-/// <c>User.MustChangePassword</c> back to false. A wrong current password (or any other rejection
-/// from the underlying Identity operation) fails with no state changed: ChangePasswordAsync
-/// either changes the password and the caller then clears the flag, or nothing happens at all.
+/// client-supplied id — same pattern as every other authenticated handler) and changes the
+/// credential-store password through <see cref="IIdentityService.ChangePasswordAsync"/>, which
+/// verifies <see cref="ChangePasswordCommand.CurrentPassword"/> and — on success — also clears
+/// <c>ApplicationUser.MustChangePassword</c> back to false (see <see cref="IIdentityService"/>'s own
+/// doc comment: that flag lives on the identity now, not on any one
+/// <see cref="InvoiceTracker.Domain.Entities.UserBusinessMembership"/> row, so there is nothing left
+/// for this handler itself to update once the Identity operation succeeds). A wrong current
+/// password (or any other rejection from the underlying Identity operation) fails with no state
+/// changed.
 /// </summary>
 public class ChangePasswordCommandHandler : IRequestHandler<ChangePasswordCommand, Unit>
 {
-    private readonly IApplicationDbContext _dbContext;
     private readonly IIdentityService _identityService;
     private readonly ICurrentUserService _currentUserService;
 
-    public ChangePasswordCommandHandler(
-        IApplicationDbContext dbContext,
-        IIdentityService identityService,
-        ICurrentUserService currentUserService)
+    public ChangePasswordCommandHandler(IIdentityService identityService, ICurrentUserService currentUserService)
     {
-        _dbContext = dbContext;
         _identityService = identityService;
         _currentUserService = currentUserService;
     }
@@ -38,15 +35,6 @@ public class ChangePasswordCommandHandler : IRequestHandler<ChangePasswordComman
         if (!result.Succeeded)
         {
             throw new BadRequestException(string.Join("; ", result.Errors));
-        }
-
-        var user = await _dbContext.BusinessUsers
-            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
-
-        if (user is not null)
-        {
-            user.MustChangePassword = false;
-            await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
         return Unit.Value;

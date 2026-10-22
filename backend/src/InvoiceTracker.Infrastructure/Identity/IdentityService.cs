@@ -1,5 +1,6 @@
 using InvoiceTracker.Application.Common.Interfaces;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 
 namespace InvoiceTracker.Infrastructure.Identity;
 
@@ -16,13 +17,14 @@ public class IdentityService : IIdentityService
         _userManager = userManager;
     }
 
-    public async Task<IdentityResultDto> CreateUserAsync(Guid userId, string email, string password)
+    public async Task<IdentityResultDto> CreateUserAsync(Guid userId, string email, string password, bool mustChangePassword = false)
     {
         var user = new ApplicationUser
         {
             Id = userId,
             UserName = email,
-            Email = email
+            Email = email,
+            MustChangePassword = mustChangePassword
         };
 
         var result = await _userManager.CreateAsync(user, password);
@@ -32,7 +34,7 @@ public class IdentityService : IIdentityService
             : IdentityResultDto.Failure(result.Errors.Select(e => e.Description));
     }
 
-    public async Task<Guid?> ValidateCredentialsAsync(string email, string password)
+    public async Task<AuthenticatedIdentityDto?> ValidateCredentialsAsync(string email, string password)
     {
         var user = await _userManager.FindByEmailAsync(email);
         if (user is null)
@@ -41,7 +43,22 @@ public class IdentityService : IIdentityService
         }
 
         var isValidPassword = await _userManager.CheckPasswordAsync(user, password);
-        return isValidPassword ? user.Id : null;
+        return isValidPassword
+            ? new AuthenticatedIdentityDto(user.Id, user.Email ?? email, user.MustChangePassword)
+            : null;
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, string>> GetEmailsByUserIdsAsync(IEnumerable<Guid> userIds)
+    {
+        var idSet = userIds.ToHashSet();
+        if (idSet.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        return await _userManager.Users
+            .Where(u => idSet.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.Email ?? string.Empty);
     }
 
     public async Task<string?> GeneratePasswordResetTokenAsync(string email)
@@ -86,8 +103,21 @@ public class IdentityService : IIdentityService
 
         var result = await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
 
-        return result.Succeeded
-            ? IdentityResultDto.Success()
-            : IdentityResultDto.Failure(result.Errors.Select(e => e.Description));
+        if (!result.Succeeded)
+        {
+            return IdentityResultDto.Failure(result.Errors.Select(e => e.Description));
+        }
+
+        // Forced password change (see architecture.md's "Forced password change for temp-password
+        // logins"): clear the flag on a successful change, whether or not it was set — this is the
+        // only place MustChangePassword lives now that it's on ApplicationUser rather than a Domain
+        // User/membership row.
+        if (user.MustChangePassword)
+        {
+            user.MustChangePassword = false;
+            await _userManager.UpdateAsync(user);
+        }
+
+        return IdentityResultDto.Success();
     }
 }

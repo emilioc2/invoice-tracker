@@ -8,11 +8,16 @@ namespace InvoiceTracker.Application.Users.Queries.ListUsers;
 public class ListUsersQueryHandler : IRequestHandler<ListUsersQuery, List<UserDto>>
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly IIdentityService _identityService;
     private readonly ICurrentUserService _currentUserService;
 
-    public ListUsersQueryHandler(IApplicationDbContext dbContext, ICurrentUserService currentUserService)
+    public ListUsersQueryHandler(
+        IApplicationDbContext dbContext,
+        IIdentityService identityService,
+        ICurrentUserService currentUserService)
     {
         _dbContext = dbContext;
+        _identityService = identityService;
         _currentUserService = currentUserService;
     }
 
@@ -20,12 +25,19 @@ public class ListUsersQueryHandler : IRequestHandler<ListUsersQuery, List<UserDt
     {
         var businessId = _currentUserService.BusinessId!.Value;
 
-        var users = await _dbContext.BusinessUsers
+        var memberships = await _dbContext.UserBusinessMemberships
             .AsNoTracking()
-            .Where(u => u.BusinessId == businessId)
-            .OrderBy(u => u.Email)
+            .Where(m => m.BusinessId == businessId)
             .ToListAsync(cancellationToken);
 
-        return users.Select(u => u.ToDto()).ToList();
+        // UserBusinessMembership has no Email column of its own (see its own doc comment) — resolve
+        // every listed membership's email in one batched lookup against the identity store rather
+        // than one query per row.
+        var emailsByUserId = await _identityService.GetEmailsByUserIdsAsync(memberships.Select(m => m.UserId));
+
+        return memberships
+            .Select(m => m.ToDto(emailsByUserId.GetValueOrDefault(m.UserId, string.Empty)))
+            .OrderBy(u => u.Email)
+            .ToList();
     }
 }

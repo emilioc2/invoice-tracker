@@ -6,48 +6,48 @@ using InvoiceTracker.Domain.Exceptions;
 namespace InvoiceTracker.UnitTests.Domain;
 
 /// <summary>
-/// Direct unit tests for <see cref="User.TransitionTo"/> — the single place a user's status
-/// workflow's legal transitions are centralized (see architecture.md's "Domain invariants:
-/// centralized status transitions" and its test plan's "Status transitions" bullet: "User
-/// (Active→Deactivated and Deactivated→Active both succeed, since UserStatus is explicitly
+/// Direct unit tests for <see cref="UserBusinessMembership.TransitionTo"/> — the single place a
+/// membership's status workflow's legal transitions are centralized (see architecture.md's "Domain
+/// invariants: centralized status transitions" and its test plan's "Status transitions" bullet:
+/// "User (Active→Deactivated and Deactivated→Active both succeed, since UserStatus is explicitly
 /// bidirectional)"). Mirrors <see cref="InvoiceStatusTransitionTests"/>'s style, scaled down to
-/// User's 2-status, bidirectional machine.
+/// UserBusinessMembership's 2-status, bidirectional machine.
 /// </summary>
 public class UserStatusTransitionTests
 {
     private static readonly Guid BusinessId = Guid.NewGuid();
 
-    private static User MakeUser() => new()
+    private static UserBusinessMembership MakeMembership() => new()
     {
         Id = Guid.NewGuid(),
+        UserId = Guid.NewGuid(),
         BusinessId = BusinessId,
-        Email = "staff@example.com",
         Role = UserRole.Staff
     };
 
     [Fact]
     public void ActiveToDeactivated_Succeeds_AndSetsStatusAndStatusChangedAt()
     {
-        var user = MakeUser();
-        var before = user.StatusChangedAt;
+        var membership = MakeMembership();
+        var before = membership.StatusChangedAt;
 
-        user.TransitionTo(UserStatus.Deactivated);
+        membership.TransitionTo(UserStatus.Deactivated);
 
-        user.Status.Should().Be(UserStatus.Deactivated);
-        user.StatusChangedAt.Should().BeOnOrAfter(before);
+        membership.Status.Should().Be(UserStatus.Deactivated);
+        membership.StatusChangedAt.Should().BeOnOrAfter(before);
     }
 
     [Fact]
     public void DeactivatedToActive_Succeeds_AndSetsStatusAndStatusChangedAt()
     {
-        var user = MakeUser();
-        user.TransitionTo(UserStatus.Deactivated);
-        var afterDeactivation = user.StatusChangedAt;
+        var membership = MakeMembership();
+        membership.TransitionTo(UserStatus.Deactivated);
+        var afterDeactivation = membership.StatusChangedAt;
 
-        user.TransitionTo(UserStatus.Active);
+        membership.TransitionTo(UserStatus.Active);
 
-        user.Status.Should().Be(UserStatus.Active);
-        user.StatusChangedAt.Should().BeOnOrAfter(afterDeactivation);
+        membership.Status.Should().Be(UserStatus.Active);
+        membership.StatusChangedAt.Should().BeOnOrAfter(afterDeactivation);
     }
 
     [Theory]
@@ -55,16 +55,16 @@ public class UserStatusTransitionTests
     [InlineData(UserStatus.Deactivated)]
     public void SameStatusNoOpTransition_IsRejected(UserStatus status)
     {
-        var user = MakeUser();
+        var membership = MakeMembership();
         if (status == UserStatus.Deactivated)
         {
-            user.TransitionTo(UserStatus.Deactivated);
+            membership.TransitionTo(UserStatus.Deactivated);
         }
 
-        var act = () => user.TransitionTo(status);
+        var act = () => membership.TransitionTo(status);
 
         act.Should().Throw<InvalidUserStatusTransitionException>()
             .Where(ex => ex.CurrentStatus == status && ex.TargetStatus == status);
-        user.Status.Should().Be(status);
+        membership.Status.Should().Be(status);
     }
 }

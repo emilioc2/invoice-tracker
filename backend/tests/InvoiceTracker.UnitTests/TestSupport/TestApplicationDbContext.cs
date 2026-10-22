@@ -23,7 +23,7 @@ public class TestApplicationDbContext : DbContext, IApplicationDbContext
     }
 
     public DbSet<Business> Businesses => Set<Business>();
-    public DbSet<User> BusinessUsers => Set<User>();
+    public DbSet<UserBusinessMembership> UserBusinessMemberships => Set<UserBusinessMembership>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceLineItem> InvoiceLineItems => Set<InvoiceLineItem>();

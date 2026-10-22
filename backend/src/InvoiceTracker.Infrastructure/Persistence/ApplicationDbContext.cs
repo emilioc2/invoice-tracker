@@ -11,7 +11,7 @@ namespace InvoiceTracker.Infrastructure.Persistence;
 /// <summary>
 /// Inherits IdentityDbContext so EF Core also manages the AspNetUsers/AspNetRoles/... tables for
 /// the <see cref="ApplicationUser"/> credential store, alongside this project's own Domain
-/// entity tables (Businesses, Users, Clients, Invoices, ...) configured below.
+/// entity tables (Businesses, UserBusinessMemberships, Clients, Invoices, ...) configured below.
 /// </summary>
 public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>, IApplicationDbContext
 {
@@ -22,10 +22,11 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
 
     public DbSet<Business> Businesses => Set<Business>();
 
-    // Named "BusinessUsers" (not "Users") to avoid clashing with IdentityDbContext's own
-    // `Users` property, which is the DbSet<ApplicationUser> credential store — a different,
-    // unrelated table from this project's own tenant-scoped Domain User entity.
-    public DbSet<User> BusinessUsers => Set<User>();
+    // Named "UserBusinessMemberships" (not "Users") — IdentityDbContext's own `Users` property
+    // (DbSet<ApplicationUser>, the credential store) is a different, unrelated table from this
+    // project's own tenant-scoped UserBusinessMembership entity, so there's no name clash to avoid
+    // the way the former "BusinessUsers" name had to.
+    public DbSet<UserBusinessMembership> UserBusinessMemberships => Set<UserBusinessMembership>();
 
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
@@ -63,5 +64,15 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityR
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+
+        // ApplicationUser's one extra property beyond the stock IdentityUser<Guid> shape — see
+        // ApplicationUser's own doc comment for why MustChangePassword lives on the identity
+        // rather than on UserBusinessMembership.
+        modelBuilder.Entity<ApplicationUser>(b =>
+        {
+            b.Property(u => u.MustChangePassword)
+                .IsRequired()
+                .HasDefaultValue(false);
+        });
     }
 }

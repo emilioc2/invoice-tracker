@@ -196,12 +196,66 @@ public class RoleAuthorizationTests : IntegrationTestBase
     }
 
     /// <summary>
+    /// Full register → login → deactivate → reactivate → login-again round trip, specifically
+    /// proving the one behavior none of the other tests in this file actually exercise end-to-end:
+    /// requirements.md's "a deactivated membership ... blocks logins ... immediately" claim. The
+    /// other tests here assert the membership's <c>Status</c> flips in the users list, but never
+    /// that a deactivated Staff user's own login attempt is actually rejected (401) before being
+    /// reactivated — this is the QA gate for this restructure step's "zero behavior change for the
+    /// single-membership case" goal, since the restructure moved this exact check (membership
+    /// Status lookup in <c>LoginCommandHandler</c>) onto the new <c>UserBusinessMembership</c> shape.
+    /// </summary>
+    [Fact]
+    public async Task DeactivatedStaffUser_CannotLogin_ButCanAgainOnceReactivated()
+    {
+        var (ownerClient, _, staffUser) = await RegisterBusinessWithStaffAsync("role-deactivated-login-blocked");
+
+        // Recover a usable password for the Staff user (never captured the temp password directly
+        // — it's only emailed) via the forgot-password flow, same recovery mechanism used
+        // elsewhere in this test class.
+        var staffClient = CreateClient();
+        await staffClient.PostAsJsonAsync("/api/auth/forgot-password", new { Email = staffUser.Email });
+        var sentEmail = Factory.EmailSender.FindLatestTo(staffUser.Email);
+        sentEmail.Should().NotBeNull();
+        var token = System.Text.RegularExpressions.Regex.Match(sentEmail!.Body, "password: (?<token>.+)$").Groups["token"].Value;
+
+        const string staffPassword = "DeactivateLoginBlocked1!";
+        var resetResponse = await staffClient.PostAsJsonAsync("/api/auth/reset-password", new
+        {
+            Email = staffUser.Email,
+            Token = token,
+            NewPassword = staffPassword
+        });
+        resetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Baseline: login succeeds while still Active.
+        var loginBeforeResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffUser.Email, Password = staffPassword });
+        loginBeforeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var deactivateResponse = await ownerClient.DeleteAsync($"/api/users/{staffUser.Id}");
+        deactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Same credentials, now rejected identically to a bad password — no new information leaked.
+        var loginWhileDeactivatedResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffUser.Email, Password = staffPassword });
+        loginWhileDeactivatedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var reactivateResponse = await ownerClient.PostAsync($"/api/users/{staffUser.Id}/reactivate", null);
+        reactivateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Same credentials, no new password/reset needed — login works again.
+        var loginAfterReactivateResponse = await staffClient.PostAsJsonAsync("/api/auth/login", new { Email = staffUser.Email, Password = staffPassword });
+        loginAfterReactivateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var finalAuth = await loginAfterReactivateResponse.Content.ReadFromJsonAsync<AuthResultDto>();
+        finalAuth!.Role.Should().Be("Staff");
+    }
+
+    /// <summary>
     /// ReactivateUserCommandHandler's "target is an Owner" guard should be unreachable through the
     /// real HTTP API — DeactivateUserCommandHandler already refuses to deactivate any Owner (both
     /// self and otherwise), so no code path should ever produce a Deactivated Owner row to
     /// reactivate in the first place. Per the QA task's instruction to "construct that scenario if
     /// you can," this test does so anyway by writing directly to the Owner's row via raw SQL,
-    /// bypassing <c>User.TransitionTo</c>'s own guard (which would never allow this) — proving the
+    /// bypassing <c>UserBusinessMembership.TransitionTo</c>'s own guard (which would never allow this) — proving the
     /// defensive check in <c>ReactivateUserCommandHandler</c> genuinely fires rather than relying on
     /// it being merely "probably fine."
     /// </summary>
@@ -213,8 +267,11 @@ public class RoleAuthorizationTests : IntegrationTestBase
         using (var scope = Factory.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            // ownerAuth.UserId is the identity id, which RegisterCommandHandler also uses as the
+            // membership's own Id (Id == UserId for every row created today, single-membership
+            // world) — so this still targets the right row by primary key.
             await dbContext.Database.ExecuteSqlInterpolatedAsync(
-                $"UPDATE \"Users\" SET \"Status\" = 'Deactivated' WHERE \"Id\" = {ownerAuth.UserId}");
+                $"UPDATE \"UserBusinessMemberships\" SET \"Status\" = 'Deactivated' WHERE \"Id\" = {ownerAuth.UserId}");
         }
 
         var reactivateResponse = await ownerClient.PostAsync($"/api/users/{ownerAuth.UserId}/reactivate", null);

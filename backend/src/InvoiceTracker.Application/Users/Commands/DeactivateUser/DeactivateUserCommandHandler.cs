@@ -36,10 +36,14 @@ public class DeactivateUserCommandHandler : IRequestHandler<DeactivateUserComman
         var businessId = _currentUserService.BusinessId!.Value;
         var currentUserId = _currentUserService.UserId!.Value;
 
-        var targetUser = await _dbContext.BusinessUsers
+        var targetUser = await _dbContext.UserBusinessMemberships
             .GetForBusinessOrThrowAsync(request.Id, businessId, "User not found.", cancellationToken);
 
-        if (targetUser.Id == currentUserId)
+        // Compare identities (UserId), not membership row ids (Id) — request.Id identifies a
+        // UserBusinessMembership row, while currentUserId (from the JWT) identifies the caller's
+        // identity. The two happen to be equal for every row today (one membership per identity),
+        // but UserId is the semantically correct field to check "is this the caller's own account."
+        if (targetUser.UserId == currentUserId)
         {
             throw new BadRequestException("An Owner cannot deactivate their own account.");
         }

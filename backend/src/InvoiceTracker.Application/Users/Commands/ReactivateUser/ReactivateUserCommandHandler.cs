@@ -34,7 +34,7 @@ public class ReactivateUserCommandHandler : IRequestHandler<ReactivateUserComman
     {
         var businessId = _currentUserService.BusinessId!.Value;
 
-        var targetUser = await _dbContext.BusinessUsers
+        var targetUser = await _dbContext.UserBusinessMemberships
             .GetForBusinessOrThrowAsync(request.Id, businessId, "User not found.", cancellationToken);
 
         if (targetUser.Role == UserRole.Owner)

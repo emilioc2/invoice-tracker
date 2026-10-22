@@ -279,7 +279,7 @@ namespace InvoiceTracker.Infrastructure.Migrations
                     b.ToTable("OutboxMessages", (string)null);
                 });
 
-            modelBuilder.Entity("InvoiceTracker.Domain.Entities.User", b =>
+            modelBuilder.Entity("InvoiceTracker.Domain.Entities.UserBusinessMembership", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -287,16 +287,6 @@ namespace InvoiceTracker.Infrastructure.Migrations
 
                     b.Property<Guid>("BusinessId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<bool>("MustChangePassword")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -311,11 +301,19 @@ namespace InvoiceTracker.Infrastructure.Migrations
                     b.Property<DateTime>("StatusChangedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BusinessId");
 
-                    b.ToTable("Users", (string)null);
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "BusinessId")
+                        .IsUnique();
+
+                    b.ToTable("UserBusinessMemberships", (string)null);
                 });
 
             modelBuilder.Entity("InvoiceTracker.Infrastructure.Identity.ApplicationUser", b =>
@@ -343,6 +341,11 @@ namespace InvoiceTracker.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("MustChangePassword")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)

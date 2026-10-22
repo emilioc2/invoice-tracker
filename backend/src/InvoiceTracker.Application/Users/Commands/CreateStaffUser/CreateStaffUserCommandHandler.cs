@@ -10,11 +10,12 @@ namespace InvoiceTracker.Application.Users.Commands.CreateStaffUser;
 
 /// <summary>
 /// Same transactional two-row pattern as <c>RegisterCommandHandler</c> (Auth/Commands/Register):
-/// a Domain <see cref="User"/> row (Role = Staff, BusinessId from the caller's own JWT) and the
-/// Identity credential-store row (same Id) are written as one atomic operation, so a failure in
-/// either (e.g. Identity rejecting a duplicate email) rolls both back rather than leaving an
-/// orphaned Domain User row with no way to log in. The business already exists by this point
-/// (unlike Register, which creates it) — only the Owner-only "add a teammate" half applies here.
+/// a <see cref="UserBusinessMembership"/> row (Role = Staff, BusinessId from the caller's own JWT)
+/// and the Identity credential-store row (same Id as the membership's <c>UserId</c>) are written
+/// as one atomic operation, so a failure in either (e.g. Identity rejecting a duplicate email)
+/// rolls both back rather than leaving an orphaned membership row with no way to log in. The
+/// business already exists by this point (unlike Register, which creates it) — only the
+/// Owner-only "add a teammate" half applies here.
 /// </summary>
 public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserCommand, UserDto>
 {
@@ -41,27 +42,29 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
 
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
 
+        // Fresh Guid shared by the membership's own Id and its UserId — same "one new identity,
+        // one new membership, same shared id" shape as RegisterCommandHandler.
         var staffId = Guid.NewGuid();
-        var staffUser = new User
+        var staffMembership = new UserBusinessMembership
         {
             Id = staffId,
+            UserId = staffId,
             BusinessId = businessId,
-            Email = request.Email,
-            Role = UserRole.Staff,
+            Role = UserRole.Staff
             // Status defaults to UserStatus.Active via the entity's own default initializer.
-            // Must be changed via ChangePasswordCommandHandler before this Staff user gets normal
-            // access — see architecture.md's "Forced password change for temp-password logins".
-            MustChangePassword = true
         };
-        _dbContext.BusinessUsers.Add(staffUser);
+        _dbContext.UserBusinessMemberships.Add(staffMembership);
 
-        // Domain User row committed to this transaction (not yet to the database).
+        // Membership row committed to this transaction (not yet to the database).
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var tempPassword = TempPasswordGenerator.Generate();
 
-        // Same Id as `staffUser` above — correlates the credential-store row to the Domain User row.
-        var identityResult = await _identityService.CreateUserAsync(staffId, request.Email, tempPassword);
+        // Same Id as `staffMembership.UserId` above — correlates the credential-store row to the
+        // membership. mustChangePassword: true — must be cleared via ChangePasswordCommandHandler
+        // before this Staff user gets normal access — see architecture.md's "Forced password
+        // change for temp-password logins".
+        var identityResult = await _identityService.CreateUserAsync(staffId, request.Email, tempPassword, mustChangePassword: true);
         if (!identityResult.Succeeded)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -73,13 +76,15 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
         // Email send happens after commit (not inside the transaction) — there's nothing to roll
         // back it against, and a send failure here shouldn't undo the already-committed account.
         await _emailSender.SendAsync(
-            staffUser.Email,
+            request.Email,
             "Your Eternity Invoicing account",
             $"An account has been created for you. Temporary password: {tempPassword}. " +
             "Please log in and change your password as soon as possible.",
             Array.Empty<EmailAttachment>(),
             cancellationToken);
 
-        return staffUser.ToDto();
+        // request.Email is already on hand (it's what we just created the identity with) — no
+        // need to round-trip through IIdentityService just to read it back.
+        return staffMembership.ToDto(request.Email);
     }
 }

@@ -8,13 +8,14 @@ using MediatR;
 namespace InvoiceTracker.Application.Auth.Commands.Register;
 
 /// <summary>
-/// Creates three correlated rows — Business, Domain <see cref="User"/> (Role = Owner), and the
-/// Identity credential-store row (same Id as the Domain User) — as one atomic operation. The
-/// Domain rows are written via EF Core directly; the credential-store row is written through
-/// <see cref="IIdentityService"/> (backed by UserManager, which shares the same registered
-/// DbContext instance). Wrapping the whole sequence in an explicit transaction means a failure
-/// partway through — e.g. a duplicate email rejected by Identity — rolls back the Business/User
-/// rows too, rather than leaving an orphaned Business with no usable Owner account.
+/// Creates three correlated rows — Business, <see cref="UserBusinessMembership"/> (Role = Owner),
+/// and the Identity credential-store row (same Id as the membership's <c>UserId</c>) — as one
+/// atomic operation. The Business/membership rows are written via EF Core directly; the
+/// credential-store row is written through <see cref="IIdentityService"/> (backed by UserManager,
+/// which shares the same registered DbContext instance). Wrapping the whole sequence in an
+/// explicit transaction means a failure partway through — e.g. a duplicate email rejected by
+/// Identity — rolls back the Business/membership rows too, rather than leaving an orphaned
+/// Business with no usable Owner account.
 /// </summary>
 public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthResultDto>
 {
@@ -44,21 +45,27 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthResul
         };
         _dbContext.Businesses.Add(business);
 
+        // Fresh Guid shared by the membership's own Id and its UserId (the identity this
+        // membership correlates to) — same "one new identity, one new membership, same shared id"
+        // shape as before the restructure, just across two distinct columns now instead of one
+        // shared primary key.
         var ownerId = Guid.NewGuid();
-        var owner = new User
+        var owner = new UserBusinessMembership
         {
             Id = ownerId,
+            UserId = ownerId,
             BusinessId = business.Id,
-            Email = request.OwnerEmail,
             Role = UserRole.Owner
             // Status defaults to UserStatus.Active via the entity's own default initializer.
         };
-        _dbContext.BusinessUsers.Add(owner);
+        _dbContext.UserBusinessMemberships.Add(owner);
 
-        // Business + Domain User committed to this transaction (not yet to the database).
+        // Business + membership committed to this transaction (not yet to the database).
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // Same Id as `owner` above — correlates the credential-store row to the Domain User row.
+        // Same Id as `owner.UserId` above — correlates the credential-store row to the membership.
+        // A newly-registered Owner chooses their own password at registration — never a temp
+        // password — so mustChangePassword is left at its default (false) here.
         var identityResult = await _identityService.CreateUserAsync(ownerId, request.OwnerEmail, request.Password);
         if (!identityResult.Succeeded)
         {
@@ -68,11 +75,9 @@ public class RegisterCommandHandler : IRequestHandler<RegisterCommand, AuthResul
 
         await transaction.CommitAsync(cancellationToken);
 
-        var token = _jwtTokenGenerator.GenerateToken(ownerId, business.Id, owner.Role.ToString(), owner.Email);
+        var token = _jwtTokenGenerator.GenerateToken(ownerId, business.Id, owner.Role.ToString(), request.OwnerEmail);
 
-        // A newly-registered Owner chooses their own password at registration — never a temp
-        // password — so MustChangePassword is always false here.
         return new AuthResultDto(
-            token.AccessToken, token.ExpiresAtUtc, ownerId, business.Id, owner.Email, owner.Role.ToString(), MustChangePassword: false);
+            token.AccessToken, token.ExpiresAtUtc, ownerId, business.Id, request.OwnerEmail, owner.Role.ToString(), MustChangePassword: false);
     }
 }

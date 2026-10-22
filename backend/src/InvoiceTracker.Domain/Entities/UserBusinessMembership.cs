@@ -4,36 +4,38 @@ using InvoiceTracker.Domain.Exceptions;
 
 namespace InvoiceTracker.Domain.Entities;
 
-// Note: PasswordHash is intentionally omitted here. ASP.NET Core Identity's
-// user store will own password storage; how that store relates to this
-// Domain/persistence table is a decision deferred to the Auth build-order
-// step (step 3), not this persistence-foundation step.
-public class User : ITenantScopedEntity
+// Note: PasswordHash is intentionally omitted here — that stays with ASP.NET Core Identity's
+// ApplicationUser (the credential store). This row is the (person, business) pairing: one per
+// business a given identity belongs to. See requirements.md's "Multi-business membership" section
+// for the full model this entity replaces (the former 1:1 Domain.User row).
+//
+// Id is this row's own primary key — distinct from UserId, which correlates to the identity
+// (ApplicationUser.Id) this membership belongs to. A single identity can hold more than one
+// UserBusinessMembership row (one per business), each with its own Id but the same UserId.
+//
+// Deliberately no Email property here: Email lives solely on the identity (ApplicationUser.Email),
+// which is this row's single source of truth for that fact. Duplicating it here would be a real
+// normalization violation with no feature that needs the copy — anything that needs to display a
+// membership's email resolves it via a lookup/join on UserId instead (see IIdentityService).
+public class UserBusinessMembership : ITenantScopedEntity
 {
     public Guid Id { get; set; }
+    public Guid UserId { get; set; }
     public Guid BusinessId { get; set; }
-    public string Email { get; set; } = string.Empty;
     public UserRole Role { get; set; }
 
     // Private setter: every status change must go through TransitionTo below (see
     // architecture.md's "Domain invariants: centralized status transitions"). Starts at Active,
-    // matching every user's actual starting state.
+    // matching every membership's actual starting state.
     public UserStatus Status { get; private set; } = UserStatus.Active;
 
     // Set by TransitionTo on every transition — records when Status last changed. Defaults to
-    // "now" at construction time, since a newly created user's status (Active) was effectively
-    // just "set" by creation.
+    // "now" at construction time, since a newly created membership's status (Active) was
+    // effectively just "set" by creation.
     public DateTime StatusChangedAt { get; private set; } = DateTime.UtcNow;
 
-    // Set true when a Staff user is created with an auto-generated temp password (see
-    // CreateStaffUserCommandHandler) and cleared back to false on that user's next successful
-    // password change via ChangePasswordCommandHandler — see architecture.md's "Forced password
-    // change for temp-password logins". Never true for a newly-registered Owner, who chooses
-    // their own password at registration.
-    public bool MustChangePassword { get; set; }
-
     /// <summary>
-    /// The single place a user's status workflow's legal transitions are encoded. Both
+    /// The single place a membership's status workflow's legal transitions are encoded. Both
     /// directions are legal: Active -> Deactivated (deactivate) and Deactivated -> Active
     /// (reactivate). Every caller that changes <see cref="Status"/> — command handlers — must
     /// call this rather than re-implementing the legality check. Throws

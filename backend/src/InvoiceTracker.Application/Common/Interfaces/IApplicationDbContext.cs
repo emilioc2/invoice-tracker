@@ -16,12 +16,13 @@ public interface IApplicationDbContext
     DbSet<Business> Businesses { get; }
 
     /// <summary>
-    /// The tenant-scoped <see cref="InvoiceTracker.Domain.Entities.User"/> rows. Named
-    /// "BusinessUsers" (not "Users") because the underlying DbContext also inherits
-    /// ASP.NET Core Identity's own <c>Users</c> property for the unrelated <c>ApplicationUser</c>
-    /// credential-store rows — this avoids a property-name clash between the two.
+    /// The tenant-scoped <see cref="InvoiceTracker.Domain.Entities.UserBusinessMembership"/> rows
+    /// — one per (identity, business) pair. The underlying DbContext also inherits ASP.NET Core
+    /// Identity's own <c>Users</c> property for the unrelated <c>ApplicationUser</c>
+    /// credential-store rows, but "UserBusinessMemberships" doesn't clash with that name the way
+    /// the former "Users"/"BusinessUsers" pairing did.
     /// </summary>
-    DbSet<User> BusinessUsers { get; }
+    DbSet<UserBusinessMembership> UserBusinessMemberships { get; }
 
     DbSet<Client> Clients { get; }
 

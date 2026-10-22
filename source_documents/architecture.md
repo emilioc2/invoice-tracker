@@ -10,7 +10,7 @@ Clean/layered architecture: each layer only depends inward (API → Infrastructu
 backend/
 ├── src/
 │   ├── InvoiceTracker.Domain/              # Entities, enums, domain logic — zero external dependencies
-│   │   ├── Entities/                       # Business, User, Client, Invoice, InvoiceLineItem, Notification
+│   │   ├── Entities/                       # Business, UserBusinessMembership, Client, Invoice, InvoiceLineItem, Notification — UserBusinessMembership replaces the former 1:1 User entity; see "Multi-business membership" below
 │   │   ├── Enums/                          # InvoiceStatus (Draft/Unpaid/Paid/Overdue/Cancelled), ClientStatus (Active/Removed), UserStatus (Active/Deactivated), UserRole (Owner/Staff), NotificationType (OverdueReminder/InvoiceSent)
 │   │   └── Events/                         # InvoiceOverdueEvent (the Kafka payload's domain-side shape)
 │   ├── InvoiceTracker.Application/          # Use cases + ports (interfaces), DTOs, validation
@@ -43,11 +43,11 @@ backend/
 │   │   │       └── GetDashboardSummary/
 │   │   ├── Notifications/
 │   │   │   └── Queries/ListNotifications/
-│   │   ├── Users/
+│   │   ├── Users/                          # operates on UserBusinessMembership rows, scoped to the caller's current business
 │   │   │   ├── Commands/ CreateStaffUser/, DeactivateUser/, ReactivateUser/
 │   │   │   └── Queries/ListUsers/
 │   │   └── Auth/
-│   │       └── Commands/ Register/, Login/, ForgotPassword/, ResetPassword/
+│   │       └── Commands/ Register/, Login/, SelectBusiness/, SwitchBusiness/, AddBusiness/, ForgotPassword/, ResetPassword/
 │   ├── InvoiceTracker.Infrastructure/        # EF Core, Identity, Kafka, Formspree, QuestPDF — the adapters
 │   │   ├── Persistence/                    # ApplicationDbContext, EF entity configs, Migrations
 │   │   ├── Identity/                       # ASP.NET Core Identity wiring, JWT token generation
@@ -131,7 +131,7 @@ Every query/command handler filters by the caller's `BusinessId`, resolved serve
 
 Handlers that fetch a single entity by id for the current business (the `GetXById`/`UpdateX`/status-change pattern repeated across Clients, Invoices, Users, etc.) should use one shared helper for the "get by id scoped to `BusinessId`, or throw not-found" lookup, rather than each handler restating `.FirstOrDefaultAsync(x => x.Id == id && x.BusinessId == businessId)` plus its own null-check-and-throw inline. A shared helper makes the multi-tenancy filter structurally consistent everywhere it's used instead of copy-pasted, directly serving the "never trust a client-supplied business ID" rule above.
 
-Role checks (`Owner` vs `Staff`) are enforced per-endpoint for user-management operations — see the Users routes below.
+Role checks (`Owner` vs `Staff`) are enforced per-endpoint for user-management operations — see the Users routes below. **Membership resolution:** every handler that used to resolve "the current user" as a single `Domain.User` row now resolves it as "the `UserBusinessMembership` for `ICurrentUserService.UserId` + `ICurrentUserService.BusinessId`" — both still come straight from the JWT's claims exactly as today, so `ICurrentUserService` itself requires no interface or implementation change. A route's `{id}` path parameter for user-management endpoints (`GET/DELETE/POST /api/users/{id}`) now identifies a `UserBusinessMembership.Id`, not a global identity id — a person with memberships in two businesses has two distinct ids, one per business, and each business only ever sees its own.
 
 ## REST API routes
 
@@ -140,11 +140,23 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 ### Auth
 | Method | Route | Notes |
 |---|---|---|
-| POST | `/api/auth/register` | Creates a new Business + its Owner user |
-| POST | `/api/auth/login` | Returns a JWT, plus `MustChangePassword` (see "Forced password change" below) |
+| POST | `/api/auth/register` | Creates a new identity (if the email has none yet) + a new Business + an Owner membership. `409 Conflict` if the email already has an identity — directs the caller to log in and use "Add a business" instead. See "Multi-business membership" |
+| POST | `/api/auth/login` | `{ email, password }`. Exactly one active membership → returns a JWT + `MustChangePassword`, unchanged from before. More than one active membership → returns `{ requiresBusinessSelection: true, preAuthToken, memberships[] }` instead, no usable token yet. Zero active memberships → `401`, identical to bad credentials |
+| POST | `/api/auth/select-business` | `{ preAuthToken, businessId }`. Completes a login that returned `requiresBusinessSelection: true` — re-validates the membership server-side, then returns the normal JWT response |
+| POST | `/api/auth/switch-business` | Requires a valid JWT. `{ businessId }`. Re-validates the caller's identity holds an `Active` membership in the target business (`404` otherwise — never trusts the client-supplied id), then issues a brand-new JWT scoped to it. The previous token is not revoked |
+| POST | `/api/auth/businesses` | Requires a valid JWT ("Add a business"). Creates a new Business + an Owner membership for the caller's existing identity (no new identity/password), then behaves like `switch-business` into it |
 | POST | `/api/auth/forgot-password` | Triggers reset email via `IEmailSender` |
 | POST | `/api/auth/reset-password` | Consumes the reset token, sets new password |
-| POST | `/api/auth/change-password` | Requires a valid JWT (not in the exempt list above). Takes `{ currentPassword, newPassword }`; mid-session change using a known current password — distinct from `reset-password`'s reset-token flow. Clears `MustChangePassword`. See "Forced password change" below |
+| POST | `/api/auth/change-password` | Requires a valid JWT. Takes `{ currentPassword, newPassword }`; clears `MustChangePassword` on the caller's identity (not any one membership — see "Multi-business membership"). See "Forced password change" below |
+
+**JWT claims, worked example:** a token issued for a person who is Owner of Business A and also Staff of Business B always carries exactly one `businessId` + one `role` claim — whichever business the token was issued for:
+```json
+// token issued via login or select-business for Business A
+{ "sub": "4f1e...", "businessId": "a3c9...", "role": "Owner", "email": "sam@example.com", "jti": "..." }
+// after switch-business to Business B — a brand-new token, not a mutation of the one above
+{ "sub": "4f1e...", "businessId": "f02b...", "role": "Staff", "email": "sam@example.com", "jti": "..." }
+```
+`sub` is the person's identity id and never changes across a switch; `businessId`/`role` always describe exactly the one business this particular token is scoped to. There is no claim listing all of a person's memberships — that list is only ever returned in the `select-business`/login-selection response body and the explicit switch-business UI's own lookup, never baked into a bearer token.
 
 ### Users (team management — Owner only except where noted)
 | Method | Route | Notes |
@@ -307,7 +319,7 @@ Result shape: `public record ResendInvoiceEmailResult(EmailDeliveryResult EmailD
 
 A Staff user's temp password (created by `CreateStaffUserCommandHandler` — see `requirements.md`'s "Multi-user onboarding") must be changed before that user can use the rest of the system. This is a new, mid-session flow — distinct from the existing `forgot-password`/`reset-password` pair, which remains a pre-auth, reset-token-based flow for "I don't remember my password at all." The forced-change flow instead assumes the caller already holds a valid JWT and knows their current (temp) password.
 
-**`User.MustChangePassword` (bool, default `false`) — new column, needs an EF Core migration.**
+**`MustChangePassword` (bool, default `false`) — new column on the identity (`ApplicationUser`), needs an EF Core migration.**
 - Set `true` by `CreateStaffUserCommandHandler` at the same point it generates and emails the temp password.
 - Cleared to `false` by the new `ChangePasswordCommandHandler` (below) on a successful change.
 
@@ -375,6 +387,8 @@ frontend/
 ```
 
 **Auth transitions and the TanStack Query cache:** because multiple businesses' users can log into the same browser tab over time, `AuthContext.tsx`'s `logout()` — both the explicit user-initiated one and the automatic one triggered by `api/client.ts`'s `401` handler — and the completion of a new `login()` must call `queryClient.clear()` (before updating auth state on logout, after updating it on login) to wipe every cached query. Without this, a second business's user could briefly see the first business's cached invoices, clients, notifications, or dashboard summary rendered from stale cache before any refetch completes. This is a hard requirement, not an optimization: multi-tenant data must never persist across a user switch in the same browser tab.
+
+**Business-selector and switcher UI:** when `login()`'s response has `requiresBusinessSelection: true`, `AuthContext.tsx` must not persist a token or user yet — it hands the `preAuthToken` + `memberships` list to a new `SelectBusinessPage.tsx`, which calls `authApi.selectBusiness(preAuthToken, businessId)` on selection; that call's success is treated exactly like a normal `login()` completion (persist token/user, `queryClient.clear()`). Separately, an authenticated person whose identity holds more than one active membership gets a "Switch business" affordance (e.g. in `AppShell`'s header, next to the current business name) that lists their other active memberships (fetched lazily, only when opened) and calls a new `switchBusiness(businessId)` on selection — which must run through the same state-update-plus-`queryClient.clear()` sequence as `login`/`logout`. The existing comment above ("because multiple businesses' users can log into the same browser tab over time") describes *different people* logging in sequentially in one tab; it is extended, not superseded, by this feature — there are now four auth-transition points that must each clear the cache: `login`, `logout`, `selectBusiness`, and `switchBusiness`.
 
 **Forced password-change route guard:** when `login()` resolves with `mustChangePassword: true`, `AuthContext.tsx` routes the SPA to a new `ChangePasswordPage.tsx` and keeps it there — the inverse of the existing `ProtectedRoute` (`components/layout/ProtectedRoute.tsx`), which keeps unauthenticated users *out* of the app; this guard keeps an authenticated-but-not-yet-compliant user *out of everything else*, until the `POST /api/auth/change-password` call succeeds and clears the flag in client state, at which point normal routing resumes with no new login required.
 
@@ -445,6 +459,10 @@ Full HTTP pipeline, real database, real migrations:
 - `POST /api/invoices/{id}/resend-email` → `400` for a `Draft` invoice, `200` + new `Notification` row for a non-`Draft` one
 - `GET /api/notifications` list DTO includes `NotificationType` and distinguishes `OverdueReminder` from `InvoiceSent` rows
 - Forced password change — `POST /api/auth/login` response's `MustChangePassword` is `true` immediately after a Staff user is created via `CreateStaffUser` (temp password), and `false` for a freshly registered Owner; `POST /api/auth/change-password` requires a valid JWT (`401` without one); end-to-end, a Staff user created via `CreateStaffUser` logs in with the temp password, calls `change-password` with it as `currentPassword`, succeeds, and a subsequent login shows `MustChangePassword: false`
+- Multi-business login — an identity with exactly one active membership logs in exactly as before (unchanged response shape); an identity with two active memberships (one Owner, one Staff, in different businesses) gets `requiresBusinessSelection: true` with both listed; `select-business` with a valid `preAuthToken` + a business the identity belongs to succeeds; `select-business` with a business id the identity does *not* belong to is rejected even with a structurally valid `preAuthToken`
+- Switch-business — succeeds and returns a token scoped to the new business/role for a membership the caller actually holds; `404` for a business id the caller's identity has no active membership in; a JWT issued for Business A is rejected (`404`, the existing cross-tenant rule) when used to call any Business-B-scoped endpoint, proving a switch requires a new token rather than letting one token silently span businesses
+- Register with an already-registered email — `409 Conflict`, no new Business/identity/membership created; "Add a business" (authenticated) for an existing identity succeeds and does not disturb its existing membership(s)
+- Deactivating a membership in one business does not affect the same identity's membership (or ability to log into) a different business
 
 ### Frontend tests (Vitest, React Testing Library, MSW)
 
