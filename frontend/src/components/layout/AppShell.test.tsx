@@ -138,6 +138,26 @@ describe("AppShell's BusinessSwitcher", () => {
     expect(screen.getByText("Staff")).toBeInTheDocument();
   });
 
+  it("displays an Owner-role other membership as \"Admin\", never the raw \"Owner\" string", async () => {
+    // Display-only: "Owner" is relabeled "Admin" in the UI (see `displayRole` in lib/utils.ts).
+    // MEMBERSHIPS above only ever exercises a Staff-role other-membership, which would not have
+    // caught a regression of the switcher leaking the raw role — this covers that gap directly.
+    server.use(
+      http.get("*/api/auth/memberships", () =>
+        HttpResponse.json([{ businessId: "business-2", businessName: "Second Business", role: "Owner" }]),
+      ),
+    );
+
+    renderAppShell();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /switch business/i }));
+
+    expect(await screen.findByText("Second Business")).toBeInTheDocument();
+    expect(screen.getByText("Admin")).toBeInTheDocument();
+    expect(screen.queryByText("Owner")).not.toBeInTheDocument();
+  });
+
   it("'Add a business' opens the dialog, and a successful submit completes auth", async () => {
     server.use(http.get("*/api/auth/memberships", () => HttpResponse.json([])));
 

@@ -22,3 +22,10 @@ export function formatCurrency(amount: number): string {
 export function dateOnlyToUtcIso(dateOnly: string): string {
   return `${dateOnly}T00:00:00.000Z`
 }
+
+// Display-only: the backend persists and returns the literal role string "Owner" (see
+// `architecture.md`'s UI display note), but end users should see it labeled "Admin". Never use
+// this for comparisons — role checks must keep comparing against the raw "Owner"/"Staff" values.
+export function displayRole(role: string): string {
+  return role === "Owner" ? "Admin" : role
+}

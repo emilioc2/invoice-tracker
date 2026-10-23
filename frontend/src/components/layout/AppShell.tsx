@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
+import { cn, displayRole } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useMembershipsQuery } from "@/hooks/useMemberships";
 
@@ -108,7 +108,7 @@ function BusinessSwitcher() {
             >
               <span className="flex w-full items-center justify-between gap-2">
                 <span>{membership.businessName}</span>
-                <span className="text-xs text-muted-foreground">{membership.role}</span>
+                <span className="text-xs text-muted-foreground">{displayRole(membership.role)}</span>
               </span>
             </DropdownMenuItem>
           ))}

@@ -23,19 +23,13 @@ import {
   useUsersQuery,
 } from "@/hooks/useUsers";
 import { applyApiErrorToForm } from "@/lib/apiErrors";
+import { displayRole } from "@/lib/utils";
 import { createStaffUserSchema, type CreateStaffUserFormValues } from "@/schemas/userSchema";
 import type { User } from "@/types/auth";
 
 // Maps the backend CreateStaffUserCommandValidator's PascalCase property name to this form's
 // field — same pattern as `ClientForm`'s FIELD_MAP.
 const FIELD_MAP = { Email: "email" } as const;
-
-// Display-only: the backend persists and returns the literal role string "Owner" (see
-// `architecture.md`'s UI display note), but end users should see it labeled "Admin". Never use
-// this for comparisons — role checks must keep comparing against the raw "Owner"/"Staff" values.
-function displayRole(role: string): string {
-  return role === "Owner" ? "Admin" : role;
-}
 
 function extractErrorTitle(error: unknown): string {
   if (error instanceof ApiError) {

@@ -5,6 +5,7 @@ import { ApiError } from "@/api/client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { displayRole } from "@/lib/utils";
 import type { MembershipOption } from "@/types/auth";
 
 const DEFAULT_ERROR_MESSAGE = "Something went wrong. Please try again.";
@@ -87,7 +88,7 @@ export function SelectBusinessPage() {
             >
               <span>{membership.businessName}</span>
               <span className="text-xs text-muted-foreground">
-                {selectingId === membership.businessId ? "Continuing…" : membership.role}
+                {selectingId === membership.businessId ? "Continuing…" : displayRole(membership.role)}
               </span>
             </Button>
           ))}

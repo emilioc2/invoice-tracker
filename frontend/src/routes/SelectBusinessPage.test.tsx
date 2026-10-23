@@ -67,7 +67,9 @@ describe("SelectBusinessPage", () => {
 
     expect(screen.getByText("Business A")).toBeInTheDocument();
     expect(screen.getByText("Business B")).toBeInTheDocument();
-    expect(screen.getByText("Owner")).toBeInTheDocument();
+    // Display-only: "Owner" is relabeled "Admin" in the UI (see `displayRole` in lib/utils.ts) —
+    // the raw role string should never leak through here.
+    expect(screen.getByText("Admin")).toBeInTheDocument();
     expect(screen.getByText("Staff")).toBeInTheDocument();
   });
 
