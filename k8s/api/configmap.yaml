@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: invoicetracker
+data:
+  ASPNETCORE_ENVIRONMENT: Development
+  ASPNETCORE_URLS: http://+:5100
+  Kafka__BootstrapServers: kafka:9092
+  Kafka__OverdueTopic: invoice-overdue
+  Kafka__ConsumerGroupId: invoice-tracker-overdue-consumer
+  Kafka__OverdueScanIntervalMinutes: "15"
+  Kafka__OutboxRelayIntervalSeconds: "15"
+  Cors__AllowedOrigins__0: http://localhost:5173
+  Frontend__BaseUrl: http://localhost:5173
+  Resend__FromAddress: onboarding@resend.dev

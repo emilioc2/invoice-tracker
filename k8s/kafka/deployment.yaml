@@ -1,0 +1,98 @@
+# Single-broker KRaft mode (no Zookeeper), matching docker-compose.yml's kafka service — sized
+# for demonstration, not production throughput. Only one listener is needed here (unlike
+# docker-compose.yml's dual-listener setup): nothing outside the cluster talks to Kafka directly,
+# so PLAINTEXT, advertised as the in-cluster Service DNS name, covers every caller (the api
+# Deployment included).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: invoicetracker
+  labels:
+    app: kafka
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      # Kubernetes auto-injects a KAFKA_PORT=tcp://<clusterIP>:9092 env var into every pod once
+      # the `kafka` Service exists (Docker-links-style service env injection). The cp-kafka
+      # image's entrypoint treats any KAFKA_PORT as the deprecated `port` broker config and
+      # exits immediately — disabling this injection is required for the image to start at all.
+      enableServiceLinks: false
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.6.1
+          ports:
+            - containerPort: 9092
+            - containerPort: 9093
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka:9092
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              # localhost, not the `kafka` Service DNS name: broker and controller are the same
+              # colocated process here, and a ClusterIP Service only routes to pods that have
+              # already passed their readiness probe. Pointing this at the Service would deadlock
+              # (the broker can't register with its own controller until Ready, and can't become
+              # Ready until it registers) — unlike docker-compose.yml, where plain Docker network
+              # DNS isn't gated on container health, so the same `kafka:9093` value works there.
+              value: 1@localhost:9093
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            - name: CLUSTER_ID
+              value: MkU3OEVBNTcwNTJENDM2Qk
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+          readinessProbe:
+            exec:
+              # kafka-broker-api-versions launches a JVM per invocation, which reliably takes
+              # longer than Kubernetes' 1s default exec-probe timeout under constrained
+              # (e.g. kind) resources — without an explicit timeoutSeconds, every probe attempt
+              # times out and kubelet kills an otherwise-healthy broker.
+              command: ["kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1
+              memory: 1Gi
+      volumes:
+        - name: kafka-data
+          persistentVolumeClaim:
+            claimName: kafka-data

@@ -1,0 +1,48 @@
+# Image is built/pushed by the GitHub Actions pipeline added in Build order step 15 — until
+# that exists, this manifest won't successfully pull; it's an orchestration artifact (see
+# requirements.md's "Kubernetes" row), not something applied against a live cluster yet.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: invoicetracker
+  labels:
+    app: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/emilioc2/invoice-tracker-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5100
+          envFrom:
+            - configMapRef:
+                name: api-config
+            - secretRef:
+                name: api-secret
+          readinessProbe:
+            tcpSocket:
+              port: 5100
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 5100
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
