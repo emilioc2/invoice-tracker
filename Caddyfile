@@ -1,0 +1,9 @@
+# Live-deployment reverse proxy (Build order step 16). Terminates HTTPS via a free Let's Encrypt
+# cert against a nip.io hostname (resolves to the EC2 instance's own public IP) rather than a
+# purchased domain - needed because the Vercel frontend is HTTPS and browsers block mixed-content
+# (HTTPS page -> plain HTTP API) fetch/XHR calls outright, discovered via a real browser
+# end-to-end check against the live site. api:5100 is reached over the internal compose network
+# only - it is no longer published to the host, so Caddy (80/443) is the sole public entrypoint.
+13-53-216-75.nip.io {
+	reverse_proxy api:5100
+}

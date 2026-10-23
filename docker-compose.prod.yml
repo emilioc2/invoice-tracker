@@ -1,0 +1,98 @@
+# Live-deployment variant of docker-compose.yml (Build order step 16). Differs from the local
+# dev file in several ways:
+#   1. `api` pulls the already-built, CI-tested ghcr.io/emilioc2/invoice-tracker-api:latest image
+#      instead of building from source - building the .NET SDK multi-stage image on a t3.micro's
+#      1GB RAM budget risks OOM.
+#   2. No `frontend` service - the live frontend is Vercel, not this box.
+#   3. All secrets/environment-specific values (DB password, JWT secret, CORS origin, Postgres
+#      connection string) come from `.env.prod` on the server, which is NOT committed to this
+#      repo (see .gitignore) - never bake real production secrets into a tracked compose file.
+#   4. No host port publish for postgres/kafka/api - the EC2 security group is the actual
+#      perimeter control (only 22, 80, 443 are open); apply migrations via `docker exec` into the
+#      postgres container rather than publishing 5432.
+#   5. `caddy` terminates HTTPS (free Let's Encrypt cert via a nip.io hostname, see Caddyfile) and
+#      reverse-proxies to `api` over the internal network - added after a real browser
+#      end-to-end check against the Vercel-hosted (HTTPS) frontend showed Chrome blocking the
+#      API call outright as mixed content (HTTPS page -> plain HTTP API). `api` itself no longer
+#      needs a host port at all; only Caddy's 80/443 are public.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: invoicetracker-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: invoicetracker
+      POSTGRES_USER: invoicetracker
+    env_file:
+      - .env.prod
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U invoicetracker -d invoicetracker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: invoicetracker-kafka
+    restart: unless-stopped
+    environment:
+      # Default cp-kafka heap (-Xmx1G) exceeds the t3.micro's ~900MB RAM outright (confirmed:
+      # "insufficient memory ... mmap failed to map 1073741824 bytes"). Trimmed per
+      # requirements.md's explicit t3.micro mitigation ("trimmed JVM heap settings").
+      KAFKA_HEAP_OPTS: "-Xmx384M -Xms384M"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  api:
+    image: ghcr.io/emilioc2/invoice-tracker-api:latest
+    container_name: invoicetracker-api
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      Kafka__BootstrapServers: "kafka:29092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: invoicetracker-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  kafka-data:
+  caddy-data:
+  caddy-config:
