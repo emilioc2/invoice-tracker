@@ -59,7 +59,7 @@ export function ClientForm({
   };
 
   return (
-    <form className="space-y-4" onSubmit={form.handleSubmit(handleSubmit)} noValidate>
+    <form className="space-y-5 md:space-y-4" onSubmit={form.handleSubmit(handleSubmit)} noValidate>
       {formError && (
         <Alert variant="destructive">
           <AlertTitle>Unable to save client</AlertTitle>
@@ -71,6 +71,7 @@ export function ClientForm({
         <Label htmlFor="client-name">Name</Label>
         <Input
           id="client-name"
+          className="h-11 md:h-8"
           aria-invalid={!!form.formState.errors.name}
           aria-describedby={form.formState.errors.name ? "client-name-error" : undefined}
           {...form.register("name")}
@@ -86,6 +87,7 @@ export function ClientForm({
         <Label htmlFor="client-email">Email</Label>
         <Input
           id="client-email"
+          className="h-11 md:h-8"
           type="email"
           aria-invalid={!!form.formState.errors.email}
           aria-describedby={form.formState.errors.email ? "client-email-error" : undefined}
@@ -102,6 +104,7 @@ export function ClientForm({
         <Label htmlFor="client-phone">Phone</Label>
         <Input
           id="client-phone"
+          className="h-11 md:h-8"
           aria-invalid={!!form.formState.errors.phone}
           aria-describedby={form.formState.errors.phone ? "client-phone-error" : undefined}
           {...form.register("phone")}
@@ -117,6 +120,7 @@ export function ClientForm({
         <Label htmlFor="client-address">Address</Label>
         <Input
           id="client-address"
+          className="h-11 md:h-8"
           aria-invalid={!!form.formState.errors.address}
           aria-describedby={form.formState.errors.address ? "client-address-error" : undefined}
           {...form.register("address")}
@@ -128,13 +132,19 @@ export function ClientForm({
         )}
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-3 pt-2 md:gap-2">
         {onCancel && (
-          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 md:h-8"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" className="h-11 md:h-8" disabled={isSubmitting}>
           {isSubmitting ? "Saving…" : submitLabel}
         </Button>
       </div>

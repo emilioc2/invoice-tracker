@@ -67,11 +67,12 @@ export function ChangePasswordPage() {
           </Alert>
         )}
 
-        <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        <form className="space-y-5 md:space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="newPassword">New password</Label>
             <Input
               id="newPassword"
+              className="h-11 md:h-8"
               type="password"
               autoComplete="new-password"
               aria-invalid={!!form.formState.errors.newPassword}
@@ -91,7 +92,7 @@ export function ChangePasswordPage() {
             )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" className="h-11 w-full md:h-8" disabled={isSubmitting}>
             {isSubmitting ? "Updating…" : "Set new password"}
           </Button>
         </form>

@@ -71,11 +71,12 @@ export function RegisterPage() {
           </Alert>
         )}
 
-        <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        <form className="space-y-5 md:space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="businessName">Business name</Label>
             <Input
               id="businessName"
+              className="h-11 md:h-8"
               autoComplete="organization"
               aria-invalid={!!form.formState.errors.businessName}
               aria-describedby={
@@ -94,6 +95,7 @@ export function RegisterPage() {
             <Label htmlFor="businessEmail">Business contact email</Label>
             <Input
               id="businessEmail"
+              className="h-11 md:h-8"
               type="email"
               autoComplete="email"
               aria-invalid={!!form.formState.errors.businessEmail}
@@ -113,6 +115,7 @@ export function RegisterPage() {
             <Label htmlFor="ownerEmail">Your (Admin) login email</Label>
             <Input
               id="ownerEmail"
+              className="h-11 md:h-8"
               type="email"
               autoComplete="email"
               aria-invalid={!!form.formState.errors.ownerEmail}
@@ -130,6 +133,7 @@ export function RegisterPage() {
             <Label htmlFor="password">Password</Label>
             <Input
               id="password"
+              className="h-11 md:h-8"
               type="password"
               autoComplete="new-password"
               aria-invalid={!!form.formState.errors.password}
@@ -147,7 +151,7 @@ export function RegisterPage() {
             )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" className="h-11 w-full md:h-8" disabled={isSubmitting}>
             {isSubmitting ? "Registering…" : "Register"}
           </Button>
         </form>

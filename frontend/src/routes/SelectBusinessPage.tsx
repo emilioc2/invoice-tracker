@@ -76,13 +76,13 @@ export function SelectBusinessPage() {
           </Alert>
         )}
 
-        <div className="space-y-2">
+        <div className="space-y-3 md:space-y-2">
           {memberships.map((membership) => (
             <Button
               key={membership.businessId}
               type="button"
               variant="outline"
-              className="w-full justify-between"
+              className="h-11 w-full justify-between md:h-8"
               disabled={selectingId !== null}
               onClick={() => handleSelect(membership.businessId)}
             >

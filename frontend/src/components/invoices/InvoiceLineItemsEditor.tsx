@@ -52,6 +52,8 @@ export function InvoiceLineItemsEditor({ control, register, errors }: InvoiceLin
           type="button"
           variant="outline"
           size="sm"
+          // 44px-tall tap target below the ~768px breakpoint; unchanged (size="sm" => h-7) at md+.
+          className="h-11 md:h-7"
           onClick={() => append({ description: "", quantity: 1, unitPrice: 0 })}
         >
           <PlusIcon className="size-3.5" />
@@ -70,11 +72,21 @@ export function InvoiceLineItemsEditor({ control, register, errors }: InvoiceLin
           fields.map((field, index) => {
             const rowErrors = errors.lineItems?.[index];
             return (
-              <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
-                <div className="col-span-5 space-y-1">
+              <div
+                key={field.id}
+                // Below the ~768px breakpoint, a 12-column grid leaves quantity/unit price/line
+                // total at 2/12 of the row (well under a usable number-input width on a phone),
+                // so each row becomes its own 2-column card instead: description spans the full
+                // row, then quantity/unit price share a row, then line total/remove share a row.
+                // At md+ this reverts to the original flat 12-column row with no card framing —
+                // the unchanged desktop layout.
+                className="grid grid-cols-2 items-start gap-3 rounded-md border border-border p-3 md:grid-cols-12 md:gap-2 md:rounded-none md:border-0 md:p-0"
+              >
+                <div className="col-span-2 space-y-1 md:col-span-5">
                   {index === 0 && <Label htmlFor={`line-item-${index}-description`}>Description</Label>}
                   <Input
                     id={`line-item-${index}-description`}
+                    className="h-11 md:h-8"
                     placeholder="Description"
                     aria-invalid={!!rowErrors?.description}
                     aria-describedby={
@@ -89,10 +101,11 @@ export function InvoiceLineItemsEditor({ control, register, errors }: InvoiceLin
                   )}
                 </div>
 
-                <div className="col-span-2 space-y-1">
+                <div className="col-span-1 space-y-1 md:col-span-2">
                   {index === 0 && <Label htmlFor={`line-item-${index}-quantity`}>Quantity</Label>}
                   <Input
                     id={`line-item-${index}-quantity`}
+                    className="h-11 md:h-8"
                     type="number"
                     step="any"
                     aria-invalid={!!rowErrors?.quantity}
@@ -108,10 +121,11 @@ export function InvoiceLineItemsEditor({ control, register, errors }: InvoiceLin
                   )}
                 </div>
 
-                <div className="col-span-2 space-y-1">
+                <div className="col-span-1 space-y-1 md:col-span-2">
                   {index === 0 && <Label htmlFor={`line-item-${index}-unitPrice`}>Unit price</Label>}
                   <Input
                     id={`line-item-${index}-unitPrice`}
+                    className="h-11 md:h-8"
                     type="number"
                     step="any"
                     aria-invalid={!!rowErrors?.unitPrice}
@@ -127,16 +141,21 @@ export function InvoiceLineItemsEditor({ control, register, errors }: InvoiceLin
                   )}
                 </div>
 
-                <div className="col-span-2 space-y-1">
+                <div className="col-span-1 space-y-1 md:col-span-2">
                   {index === 0 && <Label>Line total</Label>}
-                  <p className="h-8 text-sm leading-8">{formatCurrency(rowTotals[index] ?? 0)}</p>
+                  <p className="flex h-11 items-center text-sm md:h-8 md:leading-8">
+                    {formatCurrency(rowTotals[index] ?? 0)}
+                  </p>
                 </div>
 
-                <div className="col-span-1 flex items-end justify-end">
+                <div className="col-span-1 flex items-center justify-end md:col-span-1 md:items-end">
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
+                    // Highest-risk touch target in the form: a 44x44 tap area below the
+                    // breakpoint, unchanged (icon-sm/size-7) at md+.
+                    className="size-11 md:size-7"
                     aria-label={`Remove line item ${index + 1}`}
                     onClick={() => remove(index)}
                   >

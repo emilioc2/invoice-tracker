@@ -69,7 +69,11 @@ function DialogContent({
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
             <Button
               variant="ghost"
-              className="absolute top-2 right-2"
+              // 44x44 touch target below the ~768px breakpoint (architecture.md's "Mobile
+              // responsiveness" paragraph) — every Dialog in the app renders this close button,
+              // so fixing it here once covers every caller instead of patching each dialog.
+              // Unchanged at md+ (icon-sm/size-7), matching the existing desktop appearance.
+              className="absolute top-1 right-1 size-11 md:top-2 md:right-2 md:size-7"
               size="icon-sm"
             >
               <XIcon

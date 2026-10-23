@@ -39,7 +39,7 @@ export function AddBusinessForm({ onSubmit, onCancel }: AddBusinessFormProps) {
   };
 
   return (
-    <form className="space-y-4" onSubmit={form.handleSubmit(handleSubmit)} noValidate>
+    <form className="space-y-5 md:space-y-4" onSubmit={form.handleSubmit(handleSubmit)} noValidate>
       {formError && (
         <Alert variant="destructive">
           <AlertTitle>Unable to add business</AlertTitle>
@@ -51,6 +51,7 @@ export function AddBusinessForm({ onSubmit, onCancel }: AddBusinessFormProps) {
         <Label htmlFor="add-business-name">Business name</Label>
         <Input
           id="add-business-name"
+          className="h-11 md:h-8"
           autoComplete="organization"
           aria-invalid={!!form.formState.errors.businessName}
           aria-describedby={
@@ -69,6 +70,7 @@ export function AddBusinessForm({ onSubmit, onCancel }: AddBusinessFormProps) {
         <Label htmlFor="add-business-email">Business contact email</Label>
         <Input
           id="add-business-email"
+          className="h-11 md:h-8"
           type="email"
           autoComplete="email"
           aria-invalid={!!form.formState.errors.businessEmail}
@@ -84,13 +86,19 @@ export function AddBusinessForm({ onSubmit, onCancel }: AddBusinessFormProps) {
         )}
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end gap-3 pt-2 md:gap-2">
         {onCancel && (
-          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 md:h-8"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" className="h-11 md:h-8" disabled={isSubmitting}>
           {isSubmitting ? "Adding…" : "Add business"}
         </Button>
       </div>

@@ -102,3 +102,24 @@ describe("LoginPage branching on login() outcome", () => {
     expect(localStorage.getItem("invoice-tracker.accessToken")).toBe(SINGLE_MEMBERSHIP_RESULT.accessToken);
   });
 });
+
+// user_testing_defects.md item #18 (mobile forms/dialogs pass): inputs and the submit button
+// must carry a 44px-minimum mobile touch target (`h-11`), reverting to the existing desktop
+// sizing at the ~768px breakpoint (`md:h-8`) — not a visual-rendering assertion (jsdom doesn't
+// evaluate the breakpoint), just confirming the sizing classes are actually present.
+describe("LoginPage mobile touch targets", () => {
+  beforeEach(() => {
+    clearSession();
+  });
+
+  it("gives the email/password inputs and submit button a 44px-minimum mobile height", () => {
+    renderLoginPage();
+
+    expect(screen.getByLabelText(/email/i).className).toContain("h-11");
+    expect(screen.getByLabelText(/password/i).className).toContain("h-11");
+    const submitButton = screen.getByRole("button", { name: /log in/i });
+    expect(submitButton.className).toContain("h-11");
+    // Unchanged at md+ — the desktop layout this mobile pass must not alter.
+    expect(submitButton.className).toContain("md:h-8");
+  });
+});

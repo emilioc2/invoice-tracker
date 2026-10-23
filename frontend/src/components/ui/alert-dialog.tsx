@@ -155,7 +155,11 @@ function AlertDialogAction({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action> &
   Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
-    <Button variant={variant} size={size} asChild>
+    // 44px-minimum touch target below the ~768px breakpoint, unchanged at md+ — set on the
+    // `Button` itself (not threaded through `className` below) so its own `cn()` call resolves
+    // the conflict with the `size` variant's base height class; the asChild/Slot merge onto the
+    // Radix primitive below is a plain string concat with no such dedup.
+    <Button variant={variant} size={size} className="h-11 md:h-8" asChild>
       <AlertDialogPrimitive.Action
         data-slot="alert-dialog-action"
         className={cn(className)}
@@ -173,7 +177,7 @@ function AlertDialogCancel({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Cancel> &
   Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
-    <Button variant={variant} size={size} asChild>
+    <Button variant={variant} size={size} className="h-11 md:h-8" asChild>
       <AlertDialogPrimitive.Cancel
         data-slot="alert-dialog-cancel"
         className={cn(className)}

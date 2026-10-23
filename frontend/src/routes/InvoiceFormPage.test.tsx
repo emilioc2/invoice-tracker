@@ -153,3 +153,30 @@ describe("InvoiceFormPage validation (create mode)", () => {
     expect(await screen.findByText("Invoice detail page")).toBeInTheDocument();
   });
 });
+
+// user_testing_defects.md item #18 (mobile forms/dialogs pass): the line-item row's icon-only
+// remove button was the highest-risk touch target in the app (a size-7/28px button by default) —
+// confirms it now carries a 44px-minimum mobile hit area, reverting to the existing desktop
+// sizing at the ~768px breakpoint.
+describe("InvoiceFormPage line-item editor mobile touch targets", () => {
+  beforeEach(() => {
+    seedAuthenticatedSession();
+    server.use(http.get("*/api/clients", () => HttpResponse.json(CLIENTS_RESPONSE)));
+  });
+
+  it("gives the remove-line-item button a 44px-minimum mobile hit area", () => {
+    renderInvoiceFormPage();
+
+    const removeButton = screen.getByRole("button", { name: /remove line item 1/i });
+    expect(removeButton.className).toContain("size-11");
+    // Unchanged at md+ (icon-sm's size-7) — the desktop layout this mobile pass must not alter.
+    expect(removeButton.className).toContain("md:size-7");
+  });
+
+  it("gives the quantity/unit price inputs a 44px-minimum mobile height", () => {
+    renderInvoiceFormPage();
+
+    expect(screen.getByLabelText(/quantity/i).className).toContain("h-11");
+    expect(screen.getByLabelText(/unit price/i).className).toContain("h-11");
+  });
+});

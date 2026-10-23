@@ -110,7 +110,7 @@ export function InvoiceFormPage() {
         <p className="text-sm text-muted-foreground">
           This invoice doesn&apos;t exist, or it belongs to another business.
         </p>
-        <Button variant="outline" onClick={() => navigate("/invoices")}>
+        <Button variant="outline" className="h-11 md:h-8" onClick={() => navigate("/invoices")}>
           Back to invoices
         </Button>
       </div>
@@ -134,7 +134,11 @@ export function InvoiceFormPage() {
             new one instead.
           </AlertDescription>
         </Alert>
-        <Button variant="outline" onClick={() => navigate(`/invoices/${invoice.id}`)}>
+        <Button
+          variant="outline"
+          className="h-11 md:h-8"
+          onClick={() => navigate(`/invoices/${invoice.id}`)}
+        >
           Back to invoice
         </Button>
       </div>
@@ -195,7 +199,10 @@ export function InvoiceFormPage() {
             >
               <SelectTrigger
                 id="invoice-client"
-                className="w-full"
+                // 44px-minimum touch target below the ~768px breakpoint; unchanged
+                // (data-[size=default]:h-8) at md+. Written against the same `data-[size=...]`
+                // selector the base `select.tsx` primitive uses so the override reliably wins.
+                className="w-full data-[size=default]:h-11 md:data-[size=default]:h-8"
                 aria-invalid={!!form.formState.errors.clientId || isClientsError}
                 aria-describedby={
                   form.formState.errors.clientId
@@ -231,6 +238,7 @@ export function InvoiceFormPage() {
             <Label htmlFor="invoice-due-date">Due date</Label>
             <Input
               id="invoice-due-date"
+              className="h-11 md:h-8"
               type="date"
               aria-invalid={!!form.formState.errors.dueDate}
               aria-describedby={form.formState.errors.dueDate ? "invoice-due-date-error" : undefined}
@@ -247,6 +255,7 @@ export function InvoiceFormPage() {
             <Label htmlFor="invoice-tax-rate">Tax rate (%)</Label>
             <Input
               id="invoice-tax-rate"
+              className="h-11 md:h-8"
               type="number"
               step="any"
               min={0}
@@ -286,16 +295,17 @@ export function InvoiceFormPage() {
           errors={form.formState.errors}
         />
 
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-3 md:gap-2">
           <Button
             type="button"
             variant="outline"
+            className="h-11 md:h-8"
             onClick={() => navigate(isEditMode && invoiceId ? `/invoices/${invoiceId}` : "/invoices")}
             disabled={isSubmitting}
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
+          <Button type="submit" className="h-11 md:h-8" disabled={isSubmitting}>
             {isSubmitting ? "Saving…" : isEditMode ? "Save changes" : "Create invoice"}
           </Button>
         </div>

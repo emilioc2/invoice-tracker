@@ -64,11 +64,12 @@ export function ForgotPasswordPage() {
           </Alert>
         )}
 
-        <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        <form className="space-y-5 md:space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
+              className="h-11 md:h-8"
               type="email"
               autoComplete="email"
               aria-invalid={!!form.formState.errors.email}
@@ -82,7 +83,7 @@ export function ForgotPasswordPage() {
             )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" className="h-11 w-full md:h-8" disabled={isSubmitting}>
             {isSubmitting ? "Sending…" : "Send reset link"}
           </Button>
         </form>

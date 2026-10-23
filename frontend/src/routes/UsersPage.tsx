@@ -233,7 +233,7 @@ export function UsersPage() {
                 <AlertDescription>{addSuccessMessage}</AlertDescription>
               </Alert>
               <div className="flex justify-end">
-                <Button onClick={closeAddDialog}>Done</Button>
+                <Button className="h-11 md:h-8" onClick={closeAddDialog}>Done</Button>
               </div>
             </div>
           ) : (
@@ -249,6 +249,7 @@ export function UsersPage() {
                 <Label htmlFor="staff-email">Email</Label>
                 <Input
                   id="staff-email"
+                  className="h-11 md:h-8"
                   type="email"
                   aria-invalid={!!form.formState.errors.email}
                   aria-describedby={form.formState.errors.email ? "staff-email-error" : undefined}
@@ -261,11 +262,17 @@ export function UsersPage() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" onClick={closeAddDialog} disabled={createMutation.isPending}>
+              <div className="flex justify-end gap-3 pt-2 md:gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 md:h-8"
+                  onClick={closeAddDialog}
+                  disabled={createMutation.isPending}
+                >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={createMutation.isPending}>
+                <Button type="submit" className="h-11 md:h-8" disabled={createMutation.isPending}>
                   {createMutation.isPending ? "Creating…" : "Create"}
                 </Button>
               </div>
