@@ -29,6 +29,9 @@ export const invoiceSchema = z.object({
     .min(0, "Tax rate can't be negative.")
     .max(100, "Tax rate can't exceed 100%."),
   notes: z.string().max(2000, "Notes must be 2000 characters or fewer."),
+  // `CreateInvoiceCommandValidator`/`UpdateInvoiceCommandValidator` both have
+  // `MaximumLength(2000)` on `PaymentDetails`, same limit as `Notes` above.
+  paymentDetails: z.string().max(2000, "Payment details must be 2000 characters or fewer."),
   lineItems: z
     .array(invoiceLineItemSchema)
     .min(1, "At least one line item is required."),

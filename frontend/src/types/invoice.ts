@@ -31,6 +31,11 @@ export interface Invoice {
   taxAmount: number;
   total: number;
   notes: string | null;
+  /** Nullable free-text payment instructions — see requirements.md's "Business payment details"
+   * section. Snapshotted from `Business.PaymentDetails` at creation unless explicitly overridden;
+   * editable only while `status === "Draft"`, same as line items/due date/client. `null`/empty
+   * renders as "nothing" everywhere this field is read. */
+  paymentDetails: string | null;
   lastModifiedDate: string;
   archivedAt: string | null;
   lineItems: InvoiceLineItem[];
@@ -49,6 +54,12 @@ export interface InvoiceInput {
   dueDate: string;
   taxRate: number;
   notes: string;
+  /** Always sent as a plain string, same convention as `notes` — an empty string renders as
+   * "nothing," same as `null`, so there's no need to distinguish the two at this boundary. On
+   * create, this is pre-filled with the business's current default (see `InvoiceFormPage`) but
+   * remains a normal editable override from the backend's point of view; on update, it's treated
+   * like every other Draft-only-editable field. */
+  paymentDetails: string;
   lineItems: InvoiceLineItemInput[];
 }
 

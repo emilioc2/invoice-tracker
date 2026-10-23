@@ -81,6 +81,18 @@ describe("AppShell's nav link visibility", () => {
 
     expect(screen.getByRole("link", { name: "Users" })).toBeInTheDocument();
   });
+
+  // requirements.md's "Business payment details" section: unlike Users, Settings is reachable by
+  // any authenticated user, Owner or Staff.
+  it("shows the Settings nav link for both a Staff and an Owner user", () => {
+    renderAppShell("Staff");
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("shows the Settings nav link for an Owner user", () => {
+    renderAppShell("Owner");
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
+  });
 });
 
 describe("AppShell's BusinessSwitcher", () => {
@@ -252,6 +264,7 @@ describe("AppShell's mobile nav (below the ~768px breakpoint)", () => {
     expect(within(drawer).getByRole("link", { name: "Clients" })).toBeInTheDocument();
     expect(within(drawer).getByRole("link", { name: "Invoices" })).toBeInTheDocument();
     expect(within(drawer).getByRole("link", { name: "Notifications" })).toBeInTheDocument();
+    expect(within(drawer).getByRole("link", { name: "Settings" })).toBeInTheDocument();
     expect(within(drawer).getByText("owner@example.com")).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: /switch business/i })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "Log out" })).toBeInTheDocument();

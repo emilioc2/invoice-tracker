@@ -8,7 +8,15 @@ import { AuthProvider } from "@/context/AuthContext";
 import { InvoiceFormPage } from "@/routes/InvoiceFormPage";
 import { server } from "@/test/server";
 import { createTestQueryClient, seedAuthenticatedSession } from "@/test/test-utils";
+import type { BusinessProfile } from "@/types/business";
 import type { Invoice } from "@/types/invoice";
+
+const BUSINESS_PROFILE: BusinessProfile = {
+  id: "business-1",
+  name: "Acme Business",
+  email: "business@acme.test",
+  paymentDetails: "Pay by bank transfer to Acme Business, acct 12345.",
+};
 
 const CLIENTS_RESPONSE = {
   items: [
@@ -43,19 +51,21 @@ const CREATED_INVOICE: Invoice = {
   taxAmount: 0,
   total: 100,
   notes: "",
+  paymentDetails: null,
   lastModifiedDate: "2026-01-01T00:00:00Z",
   archivedAt: null,
   lineItems: [{ id: "line-1", description: "Consulting services", quantity: 1, unitPrice: 100, lineTotal: 100 }],
 };
 
-function renderInvoiceFormPage() {
+function renderInvoiceFormPage(initialRoute = "/invoices/new") {
   const queryClient = createTestQueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <MemoryRouter initialEntries={["/invoices/new"]}>
+        <MemoryRouter initialEntries={[initialRoute]}>
           <Routes>
             <Route path="/invoices/new" element={<InvoiceFormPage />} />
+            <Route path="/invoices/:invoiceId/edit" element={<InvoiceFormPage />} />
             <Route
               path="/invoices/:invoiceId"
               element={<div>Invoice detail page</div>}
@@ -78,6 +88,7 @@ describe("InvoiceFormPage validation (create mode)", () => {
   beforeEach(() => {
     seedAuthenticatedSession();
     server.use(http.get("*/api/clients", () => HttpResponse.json(CLIENTS_RESPONSE)));
+    server.use(http.get("*/api/business", () => HttpResponse.json(BUSINESS_PROFILE)));
   });
 
   it("blocks submission and shows inline errors when a line item has quantity 0", async () => {
@@ -162,6 +173,7 @@ describe("InvoiceFormPage line-item editor mobile touch targets", () => {
   beforeEach(() => {
     seedAuthenticatedSession();
     server.use(http.get("*/api/clients", () => HttpResponse.json(CLIENTS_RESPONSE)));
+    server.use(http.get("*/api/business", () => HttpResponse.json(BUSINESS_PROFILE)));
   });
 
   it("gives the remove-line-item button a 44px-minimum mobile hit area", () => {
@@ -178,5 +190,91 @@ describe("InvoiceFormPage line-item editor mobile touch targets", () => {
 
     expect(screen.getByLabelText(/quantity/i).className).toContain("h-11");
     expect(screen.getByLabelText(/unit price/i).className).toContain("h-11");
+  });
+});
+
+// requirements.md/architecture.md's "Business payment details" section: the create form
+// pre-fills `paymentDetails` from the business's current default as an editable starting point;
+// the edit form (Draft-only) pre-fills from the invoice's own value instead, never the business
+// default, and submits whatever the user actually leaves in the field either way.
+describe("InvoiceFormPage — payment details field", () => {
+  beforeEach(() => {
+    seedAuthenticatedSession();
+    server.use(http.get("*/api/clients", () => HttpResponse.json(CLIENTS_RESPONSE)));
+  });
+
+  it("pre-fills the field from the business's current default in create mode", async () => {
+    server.use(http.get("*/api/business", () => HttpResponse.json(BUSINESS_PROFILE)));
+    renderInvoiceFormPage();
+
+    expect(
+      await screen.findByDisplayValue(BUSINESS_PROFILE.paymentDetails as string),
+    ).toBeInTheDocument();
+  });
+
+  it("submits a user-edited payment details value, not the untouched business default", async () => {
+    server.use(http.get("*/api/business", () => HttpResponse.json(BUSINESS_PROFILE)));
+    let capturedBody: Record<string, unknown> = {};
+    server.use(
+      http.post("*/api/invoices", async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(CREATED_INVOICE, { status: 201 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderInvoiceFormPage();
+
+    await screen.findByDisplayValue(BUSINESS_PROFILE.paymentDetails as string);
+    const paymentDetailsField = screen.getByLabelText(/payment details/i);
+    await user.clear(paymentDetailsField);
+    await user.type(paymentDetailsField, "Pay via Venmo @acme-business");
+
+    await selectClient(user);
+    fireEvent.change(screen.getByLabelText(/due date/i), { target: { value: "2026-02-01" } });
+    await user.type(screen.getByLabelText(/description/i), "Consulting services");
+
+    await user.click(screen.getByRole("button", { name: /create invoice/i }));
+
+    await waitFor(() =>
+      expect(capturedBody.paymentDetails).toBe("Pay via Venmo @acme-business"),
+    );
+  });
+
+  it("pre-fills the field from the invoice's own value, not the business default, in edit mode", async () => {
+    const draftInvoice: Invoice = {
+      ...CREATED_INVOICE,
+      id: "invoice-edit-1",
+      status: "Draft",
+      paymentDetails: "Pay by cheque to Invoice Co.",
+    };
+    server.use(
+      http.get("*/api/invoices/:id", () => HttpResponse.json(draftInvoice)),
+      // A business default is deliberately present here too, to prove it's ignored in edit mode.
+      http.get("*/api/business", () => HttpResponse.json(BUSINESS_PROFILE)),
+    );
+
+    renderInvoiceFormPage(`/invoices/${draftInvoice.id}/edit`);
+
+    expect(await screen.findByDisplayValue("Pay by cheque to Invoice Co.")).toBeInTheDocument();
+    expect(
+      screen.queryByDisplayValue(BUSINESS_PROFILE.paymentDetails as string),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show edit affordances for payment details on a non-Draft invoice", async () => {
+    const sentInvoice: Invoice = {
+      ...CREATED_INVOICE,
+      id: "invoice-sent-1",
+      status: "Unpaid",
+      issueDate: "2026-01-02T00:00:00Z",
+      paymentDetails: "Pay by cheque to Invoice Co.",
+    };
+    server.use(http.get("*/api/invoices/:id", () => HttpResponse.json(sentInvoice)));
+
+    renderInvoiceFormPage(`/invoices/${sentInvoice.id}/edit`);
+
+    expect(await screen.findByText("This invoice can no longer be edited")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/payment details/i)).not.toBeInTheDocument();
   });
 });

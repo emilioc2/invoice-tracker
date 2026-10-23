@@ -297,6 +297,15 @@ export function InvoiceDetailPage() {
         </div>
       )}
 
+      {invoice.paymentDetails && (
+        <div className="space-y-1">
+          <h2 className="text-lg font-medium">Payment details</h2>
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+            {invoice.paymentDetails}
+          </p>
+        </div>
+      )}
+
       <ConfirmDialog
         open={!!pendingAction}
         onOpenChange={(open) => {

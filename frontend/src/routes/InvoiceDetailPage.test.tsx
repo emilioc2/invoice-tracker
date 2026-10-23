@@ -43,6 +43,7 @@ function buildInvoice(overrides: Partial<Invoice> = {}): Invoice {
     taxAmount: 0,
     total: 100,
     notes: "",
+    paymentDetails: null,
     lastModifiedDate: "2026-01-01T00:00:00Z",
     archivedAt: null,
     lineItems: [],
@@ -69,6 +70,33 @@ function renderDetailPage(invoice: Invoice) {
     </QueryClientProvider>,
   );
 }
+
+// requirements.md/architecture.md's "Business payment details" section: shown when present,
+// omitted entirely (no empty "Payment details:" label) when null/empty.
+describe("InvoiceDetailPage — payment details display", () => {
+  beforeEach(() => {
+    seedAuthenticatedSession();
+  });
+
+  it("shows the payment details section when the invoice has a value", async () => {
+    renderDetailPage(
+      buildInvoice({ paymentDetails: "Pay by bank transfer to Acme Business, acct 12345." }),
+    );
+
+    expect(await screen.findByText("INV-0001")).toBeInTheDocument();
+    expect(screen.getByText("Payment details")).toBeInTheDocument();
+    expect(
+      screen.getByText("Pay by bank transfer to Acme Business, acct 12345."),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the payment details section entirely when the invoice has no value", async () => {
+    renderDetailPage(buildInvoice({ paymentDetails: null }));
+
+    expect(await screen.findByText("INV-0001")).toBeInTheDocument();
+    expect(screen.queryByText("Payment details")).not.toBeInTheDocument();
+  });
+});
 
 describe("InvoiceDetailPage — Resend button visibility", () => {
   beforeEach(() => {

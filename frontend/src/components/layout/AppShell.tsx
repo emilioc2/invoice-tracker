@@ -43,6 +43,7 @@ const navItems = [
   { to: "/invoices", label: "Invoices" },
   { to: "/notifications", label: "Notifications" },
   { to: "/users", label: "Users", ownerOnly: true },
+  { to: "/settings", label: "Settings" },
 ];
 
 const DEFAULT_SWITCH_ERROR = "Unable to switch business. Please try again.";
@@ -233,7 +234,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const visibleNavItems = navItems.filter((item) => !item.ownerOnly || user?.role === "Owner");
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex flex-1 flex-col bg-background text-foreground">
       <header className="relative border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <span className="text-lg font-semibold">Eternity Invoicing</span>

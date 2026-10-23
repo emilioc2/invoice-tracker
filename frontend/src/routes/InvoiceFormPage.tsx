@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useBusinessProfileQuery } from "@/hooks/useBusiness";
 import { useClientsQuery } from "@/hooks/useClients";
 import { useCreateInvoiceMutation, useInvoiceQuery, useUpdateInvoiceMutation } from "@/hooks/useInvoices";
 import { applyApiErrorToForm } from "@/lib/apiErrors";
@@ -31,6 +32,7 @@ const BASE_FIELD_MAP = {
   DueDate: "dueDate",
   TaxRate: "taxRatePercent",
   Notes: "notes",
+  PaymentDetails: "paymentDetails",
 } as const;
 
 function buildFieldMap(lineItemCount: number): Record<string, Path<InvoiceFormInput>> {
@@ -55,6 +57,7 @@ const EMPTY_DEFAULTS: InvoiceFormInput = {
   dueDate: "",
   taxRatePercent: 0,
   notes: "",
+  paymentDetails: "",
   lineItems: [{ description: "", quantity: 1, unitPrice: 0 }],
 };
 
@@ -73,6 +76,9 @@ export function InvoiceFormPage() {
 
   const createMutation = useCreateInvoiceMutation();
   const updateMutation = useUpdateInvoiceMutation(invoiceId ?? "");
+  // Only needed in create mode, to pre-fill `paymentDetails` below — edit mode pre-fills from the
+  // invoice's own value instead, so there's no reason to fetch the business default there.
+  const { data: business } = useBusinessProfileQuery(!isEditMode);
 
   const form = useForm<InvoiceFormInput, unknown, InvoiceFormValues>({
     resolver: zodResolver(invoiceSchema),
@@ -90,6 +96,9 @@ export function InvoiceFormPage() {
         // Rounded to avoid floating-point noise (e.g. 0.29 * 100 === 28.999999999999996).
         taxRatePercent: Math.round(invoice.taxRate * 10000) / 100,
         notes: invoice.notes ?? "",
+        // Edit mode pre-fills from the invoice's own current value, never the business default —
+        // see the create-mode pre-fill effect below for that case.
+        paymentDetails: invoice.paymentDetails ?? "",
         lineItems: invoice.lineItems.map((item) => ({
           description: item.description,
           quantity: item.quantity,
@@ -98,6 +107,18 @@ export function InvoiceFormPage() {
       });
     }
   }, [isEditMode, invoice, form]);
+
+  // Create mode only: pre-fills `paymentDetails` with the business's current default once it
+  // loads, as a starting point the user can edit/clear before submitting — the backend snapshots
+  // whatever value is actually submitted (architecture.md's "Business payment details" section),
+  // so this is just a normal editable field that happens to start pre-filled. `setValue` (unlike
+  // `reset`) doesn't mark the field dirty, and the `dirtyFields` guard here means this never
+  // clobbers something the user already typed, even if the query refetches later.
+  useEffect(() => {
+    if (!isEditMode && business && !form.formState.dirtyFields.paymentDetails) {
+      form.setValue("paymentDetails", business.paymentDetails ?? "");
+    }
+  }, [isEditMode, business, form]);
 
   if (isEditMode && isInvoiceLoading) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
@@ -156,6 +177,7 @@ export function InvoiceFormPage() {
         dueDate: dateOnlyToUtcIso(values.dueDate),
         taxRate: values.taxRatePercent / 100,
         notes: values.notes,
+        paymentDetails: values.paymentDetails,
         lineItems: values.lineItems.map((item) => ({
           description: item.description,
           quantity: item.quantity,
@@ -285,6 +307,26 @@ export function InvoiceFormPage() {
           {form.formState.errors.notes && (
             <p id="invoice-notes-error" className="text-sm text-destructive">
               {form.formState.errors.notes.message}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="invoice-payment-details">Payment details</Label>
+          <Textarea
+            id="invoice-payment-details"
+            aria-invalid={!!form.formState.errors.paymentDetails}
+            aria-describedby="invoice-payment-details-help"
+            {...form.register("paymentDetails")}
+          />
+          <p id="invoice-payment-details-help" className="text-xs text-muted-foreground">
+            {isEditMode
+              ? "Shown on the invoice PDF and in the invoice email, if set."
+              : "Pre-filled from your business's default payment details — edit or clear it for just this invoice."}
+          </p>
+          {form.formState.errors.paymentDetails && (
+            <p className="text-sm text-destructive">
+              {form.formState.errors.paymentDetails.message}
             </p>
           )}
         </div>
