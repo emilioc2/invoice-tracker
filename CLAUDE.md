@@ -35,6 +35,14 @@ These two documents are authoritative. If something here conflicts with them, th
 - **Invoice dates**: `IssueDate` is never directly editable — it's `null` while `Draft` and gets set automatically (and becomes immutable) the moment the invoice is sent. `CreatedAtDate` is the separate, system-set audit timestamp from row creation.
 - **User deactivation**: Owner can deactivate a Staff user (`IsActive = false`); an Owner can never deactivate their own account — there is exactly one Owner per business, so this is what prevents a business from losing all user-management access.
 
+## Secrets handling
+
+The real `Resend:ApiKey` lives only in `dotnet user-secrets` for the `InvoiceTracker.Api` project — never in a committed file. **Never run `dotnet user-secrets list` (or `cat`/print the secrets.json file) and let its raw output reach a tool-output transcript** — its output format is `Resend:ApiKey = <value>` (spaces around `=`), which has repeatedly broken naive `sed`/regex redaction attempts and leaked the real key into transcripts. If a subagent (e.g. QA, verifying a real Resend send) needs the key, retrieve it into a shell variable without ever printing the raw value, e.g.:
+```
+RESEND_KEY=$(dotnet user-secrets list | grep "Resend:ApiKey" | sed 's/^Resend:ApiKey = //')
+```
+then use `$RESEND_KEY` directly inside subsequent commands (e.g. a `curl` `Authorization` header) — never `echo`/`cat` the variable or the raw `list` output itself.
+
 ## Testing
 
 - Backend unit tests: pure domain/application logic, mocked dependencies — no real database or Kafka.
