@@ -5,8 +5,9 @@ using MediatR;
 namespace InvoiceTracker.Application.Auth.Commands.ForgotPassword;
 
 /// <summary>
-/// Generates a reset token and emails it (no-op <see cref="IEmailSender"/> for now — the real
-/// Formspree implementation is a later build-order step). Always succeeds from the caller's
+/// Generates a reset token and emails it via <see cref="IEmailSender"/> (the concrete adapter —
+/// <c>ResendEmailSender</c> or <c>NoOpEmailSender</c> — is chosen in Infrastructure's DI wiring).
+/// Always succeeds from the caller's
 /// point of view, whether or not the email matched an account, so the response never leaks
 /// account existence — standard practice for forgot-password flows.
 /// </summary>

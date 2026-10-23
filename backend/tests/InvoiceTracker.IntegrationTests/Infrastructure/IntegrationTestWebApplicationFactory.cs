@@ -74,7 +74,7 @@ public class IntegrationTestWebApplicationFactory : WebApplicationFactory<Progra
             services.RemoveAll<IEventPublisher>();
             services.AddSingleton<IEventPublisher, NoOpEventPublisher>();
 
-            // --- 3. Never a real Formspree call: replace IEmailSender with a fake that records
+            // --- 3. Never a real Resend call: replace IEmailSender with a fake that records
             // what was "sent" so tests can assert on it (e.g. reading a password-reset token back
             // out of a captured email body). Registered as the single shared instance (via the
             // factory's own EmailSender property) so tests can inspect it directly.

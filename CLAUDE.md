@@ -16,7 +16,7 @@ These two documents are authoritative. If something here conflicts with them, th
 - Database: PostgreSQL via EF Core
 - Messaging: Kafka (KRaft mode), transactional outbox pattern for publishing
 - Auth: ASP.NET Core Identity + JWT bearer tokens
-- Email: Formspree via `IEmailSender` abstraction
+- Email: Resend via `IEmailSender` abstraction
 - PDF: QuestPDF
 - Frontend: React + TypeScript (Vite), React Router, TanStack Query, React Hook Form + Zod, Tailwind CSS + shadcn/ui
 - Testing: xUnit/FluentAssertions/NSubstitute + Testcontainers (backend), Vitest/React Testing Library/MSW (frontend)

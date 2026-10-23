@@ -3,8 +3,9 @@ using InvoiceTracker.Application.Common.Models;
 namespace InvoiceTracker.Application.Common.Interfaces;
 
 /// <summary>
-/// Generic outbound email port. The concrete adapter (Formspree, or a no-op placeholder
-/// until that's wired up) lives in Infrastructure — the Application layer only depends on this shape.
+/// Generic outbound email port. The concrete adapter (Resend, or a no-op placeholder
+/// used when no API key is configured) lives in Infrastructure — the Application layer only
+/// depends on this shape.
 ///
 /// <paramref name="attachments"/> is required (not optional/defaulted) deliberately: this is a
 /// breaking change to an existing interface, and every call site should have to make an explicit

@@ -25,7 +25,7 @@ namespace InvoiceTracker.UnitTests.Kafka;
 ///    crash between "recorded" and "sent" can only ever leave one row behind to retry, never a
 ///    second Sent row for the same SourceEventId).
 ///
-/// Exercised against a mocked <see cref="IEmailSender"/> (no real Formspree/HTTP call) and EF
+/// Exercised against a mocked <see cref="IEmailSender"/> (no real Resend/HTTP call) and EF
 /// Core's in-memory provider (no real Kafka broker, no real Postgres) via the private
 /// <c>ProcessMessageAsync</c> method directly — this consumer's own Kafka consume loop is
 /// infrastructure plumbing around that method, not business logic to re-test here.
@@ -198,7 +198,7 @@ public class OverdueNotificationConsumerTests
         var emailSender = Substitute.For<IEmailSender>();
         emailSender
             .SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Formspree endpoint returned 404"));
+            .ThrowsAsync(new InvalidOperationException("Resend endpoint returned 404"));
 
         var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services => services.AddSingleton(emailSender));
 

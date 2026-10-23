@@ -53,7 +53,7 @@ public class RoleAuthorizationTests : IntegrationTestBase
 
         // We never captured the Staff user's temp password (it's only emailed), so log in as Staff
         // the same way the real app would have to: reset the password via the forgot-password flow,
-        // using the fake IEmailSender to recover the token (never a real Formspree call).
+        // using the fake IEmailSender to recover the token (never a real Resend call).
         var staffClient = CreateClient();
         await staffClient.PostAsJsonAsync("/api/auth/forgot-password", new { Email = staffUser.Email });
         var sentEmail = Factory.EmailSender.FindLatestTo(staffUser.Email);

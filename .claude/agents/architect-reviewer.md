@@ -18,13 +18,13 @@ Review the design against these dimensions, scoped to what's actually relevant f
 - **Security architecture** — JWT + ASP.NET Identity design, password reset flow, role enforcement (Owner vs Staff), anything resembling an auth gap.
 - **Reliability/failure modes** — the Kafka pipeline's outbox → relay → consumer chain: what happens on a crash at each step? Is idempotency actually sufficient?
 - **Scalability proportionality** — is anything over-built for the stated scale (single EC2 t3.micro, one Kafka broker), or under-built for stated growth expectations?
-- **Technology choices** — are each of the stack choices (Postgres, Kafka KRaft, Formspree, QuestPDF, TanStack Query, shadcn/ui) actually justified by what's documented, or just asserted?
+- **Technology choices** — are each of the stack choices (Postgres, Kafka KRaft, Resend, QuestPDF, TanStack Query, shadcn/ui) actually justified by what's documented, or just asserted?
 - **Testability** — does the test plan in `architecture.md` actually cover the riskiest parts of the design (multi-tenancy, concurrency, Kafka idempotency)?
 - **Gaps** — anything the requirements imply that the architecture doesn't address, or vice versa.
 
 ## What NOT to do
 
-- Don't propose a different tech stack or re-litigate choices that were explicitly decided with documented trade-offs (e.g. the AWS t3.micro RAM constraint, Formspree's delivery limitation, K8s manifests-as-artifacts-only) — note residual risk if any, but don't re-argue a settled decision unless you see something concretely wrong with it.
+- Don't propose a different tech stack or re-litigate choices that were explicitly decided with documented trade-offs (e.g. the AWS t3.micro RAM constraint, Resend's sandbox-mode delivery limitation, K8s manifests-as-artifacts-only) — note residual risk if any, but don't re-argue a settled decision unless you see something concretely wrong with it.
 - Don't suggest enterprise-scale patterns (service mesh, multi-region, distributed tracing infrastructure) that don't match this project's actual scale.
 - Don't modify `requirements.md` or `architecture.md` yourself — report findings back as a review, let the project owner decide what to change.
 

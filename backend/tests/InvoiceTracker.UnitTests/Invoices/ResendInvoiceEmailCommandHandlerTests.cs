@@ -142,7 +142,7 @@ public class ResendInvoiceEmailCommandHandlerTests
         var emailSender = Substitute.For<IEmailSender>();
         emailSender
             .SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Formspree endpoint returned 404"));
+            .ThrowsAsync(new InvalidOperationException("Resend endpoint returned 404"));
 
         var handler = CreateHandler(db, business.Id, emailSender);
 

@@ -97,23 +97,24 @@ public static class DependencyInjection
         services.AddScoped<IIdentityService, IdentityService>();
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 
-        // FormspreeSettings is bound unconditionally — harmless, and needed once a real
-        // environment actually uses FormspreeEmailSender below.
-        services.Configure<FormspreeSettings>(configuration.GetSection("Formspree"));
+        // ResendSettings is bound unconditionally — harmless, and needed once a real API key is
+        // configured.
+        services.Configure<ResendSettings>(configuration.GetSection("Resend"));
 
-        // In Development, appsettings.Development.json's Formspree:FormEndpoint is still the
-        // documented placeholder (https://formspree.io/f/YOUR_FORM_ID), so a real
-        // FormspreeEmailSender call 404s and throws. Use NoOpEmailSender locally instead — it logs
-        // what it would have sent (handy for reading a reset token out of the console) without
-        // making a real HTTP call. Non-Development environments are expected to have a real
-        // Formspree endpoint configured, so they get the real sender.
-        if (environment.IsDevelopment())
+        // ResendEmailSender is used whenever a real Resend API key is configured — in any
+        // environment, including Development (a deliberate runtime check rather than a purely
+        // environment-based split, since the key lives in user-secrets/env vars rather than
+        // appsettings.*.json). NoOpEmailSender is the fallback otherwise, including Development
+        // with no key configured — it logs what it would have sent (handy for reading a reset
+        // token out of the console) without making a real HTTP call.
+        var resendApiKey = configuration["Resend:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
         {
-            services.AddSingleton<IEmailSender, NoOpEmailSender>();
+            services.AddHttpClient<IEmailSender, ResendEmailSender>();
         }
         else
         {
-            services.AddHttpClient<IEmailSender, FormspreeEmailSender>();
+            services.AddSingleton<IEmailSender, NoOpEmailSender>();
         }
 
         services.Configure<KafkaSettings>(configuration.GetSection("Kafka"));

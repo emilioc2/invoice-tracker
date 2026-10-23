@@ -11,7 +11,7 @@ namespace InvoiceTracker.IntegrationTests.Tests;
 /// Full-HTTP coverage of the four Auth routes (architecture.md's integration-test checklist):
 /// register creates Business+Owner, login succeeds/fails correctly, and the forgot/reset-password
 /// round trip works end-to-end against a fake <see cref="InvoiceTracker.IntegrationTests.Infrastructure.TestEmailSender"/>
-/// (never a real Formspree call).
+/// (never a real Resend call).
 /// </summary>
 [Collection(IntegrationTestCollection.Name)]
 public class AuthTests : IntegrationTestBase
@@ -137,7 +137,7 @@ public class AuthTests : IntegrationTestBase
         var forgotResponse = await client.PostAsJsonAsync("/api/auth/forgot-password", new { Email = auth.Email });
         forgotResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Never a real Formspree call — the token comes back out of the fake IEmailSender's
+        // Never a real Resend call — the token comes back out of the fake IEmailSender's
         // captured message body, the same one the real app would have emailed to the user.
         var sentEmail = Factory.EmailSender.FindLatestTo(auth.Email);
         sentEmail.Should().NotBeNull("ForgotPassword should have sent a reset token via IEmailSender");
