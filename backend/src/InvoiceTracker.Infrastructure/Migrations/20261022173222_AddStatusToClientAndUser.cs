@@ -52,7 +52,7 @@ namespace InvoiceTracker.Infrastructure.Migrations
                 """
                 UPDATE "Clients"
                 SET "Status" = CASE WHEN "ArchivedAt" IS NOT NULL THEN 'Removed' ELSE 'Active' END,
-                    "StatusChangedAt" = COALESCE("ArchivedAt", "CreatedAtDate")
+                    "StatusChangedAt" = COALESCE("ArchivedAt", "CreatedAtDate");
                 """);
 
             // Data-migrate Users: Status derived from the old IsActive boolean. Unlike Client,
@@ -65,7 +65,7 @@ namespace InvoiceTracker.Infrastructure.Migrations
                 $"""
                 UPDATE "Users"
                 SET "Status" = CASE WHEN "IsActive" THEN 'Active' ELSE 'Deactivated' END,
-                    "StatusChangedAt" = TIMESTAMPTZ '{DateTime.UtcNow:O}'
+                    "StatusChangedAt" = TIMESTAMPTZ '{DateTime.UtcNow:O}';
                 """);
 
             // Every row now has a value in both new columns - enforce NOT NULL to match the
@@ -152,13 +152,13 @@ namespace InvoiceTracker.Infrastructure.Migrations
             migrationBuilder.Sql(
                 """
                 UPDATE "Clients"
-                SET "ArchivedAt" = CASE WHEN "Status" = 'Removed' THEN "StatusChangedAt" ELSE NULL END
+                SET "ArchivedAt" = CASE WHEN "Status" = 'Removed' THEN "StatusChangedAt" ELSE NULL END;
                 """);
 
             migrationBuilder.Sql(
                 """
                 UPDATE "Users"
-                SET "IsActive" = CASE WHEN "Status" = 'Active' THEN TRUE ELSE FALSE END
+                SET "IsActive" = CASE WHEN "Status" = 'Active' THEN TRUE ELSE FALSE END;
                 """);
 
             migrationBuilder.DropColumn(
