@@ -76,12 +76,14 @@ Because email delivery isn't guaranteed, a business can **resend** the same invo
 
 **Accepted limitation:** unlike the Kafka-driven overdue-reminder path, nothing automatically retries a `Pending` `Notification` row left behind by a process crash mid-send on this path — there is no event to redeliver. A human notices (e.g. a `Failed` or stuck `Pending` row in the Notifications list) and resends manually.
 
+**Overdue reminder email content:** the automatic, Kafka-driven overdue reminder (`NotificationType = OverdueReminder`) is structured the same way as the Send/Resend invoice email above — a greeting, the invoice's amount due and due date, and a closing line — with the invoice PDF attached, instead of a single bare status sentence with no attachment. The wording differs because the framing differs (a reminder that payment is late, not "here's a copy of your invoice"), but a client reading either email should recognize them as the same kind of correspondence from the same business. The Kafka event itself stays lightweight (invoice/client summary fields only, no line items) — the consumer sources the PDF and the full invoice detail itself from the database, the same way the Send/Resend handlers do. See `architecture.md`'s `OverdueNotificationConsumer` section for the exact sequence and template.
+
 ## In scope
 
 - Business + Owner registration/login; Owner-created, Owner-deactivated, and Owner-reactivated Staff memberships (an Owner can never deactivate their own membership in that business); JWT auth, scoped to one active business per token; a business-selector screen at login when one identity's credentials match more than one active membership, and an explicit switch-business action afterward — see "Multi-business membership"; self-service forgot-password/reset flow; forced password-change flow for temp-password logins (distinct from the self-service flow, mid-session with a known current password)
 - Client CRUD (soft-delete via `ClientStatus.Removed`, not hard delete)
 - Invoice CRUD with line items (archive via `ArchivedAt`, not hard delete), full status workflow above
-- Kafka-driven overdue pipeline: background job flags overdue invoices → publishes event → consumer "sends" via Resend + persists a `Notification`
+- Kafka-driven overdue pipeline: background job flags overdue invoices → publishes event → consumer sends a structured reminder email (letter format, PDF attached) via Resend + persists a `Notification`
 - Invoice email delivery on Send (PDF attachment + invoice details in body), with a manual Resend capability for any invoice past `Draft`; delivery outcome (`Sent`/`Failed`) tracked per attempt via `Notification` records and reported separately from the Send/Resend action's own (always-independent) success
 - Notifications list view
 - Invoice list with filtering (status, client, date range) + dashboard summary (outstanding total, overdue count, etc.)

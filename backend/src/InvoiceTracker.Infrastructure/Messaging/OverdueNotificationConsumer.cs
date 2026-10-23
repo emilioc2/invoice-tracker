@@ -2,6 +2,7 @@ using System.Text.Json;
 using Confluent.Kafka;
 using InvoiceTracker.Application.Common.Interfaces;
 using InvoiceTracker.Application.Common.Models;
+using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.Domain.Entities;
 using InvoiceTracker.Domain.Enums;
 using InvoiceTracker.Domain.Events;
@@ -140,6 +141,15 @@ public class OverdueNotificationConsumer : BackgroundService
     /// already-processed skip case), <c>false</c> if it ended up <see cref="NotificationStatus.Failed"/>
     /// — the caller must leave the offset uncommitted in that case so Kafka redelivery remains the
     /// retry path for Failed rows, per this class's crash-safety design.
+    ///
+    /// Per architecture.md's updated "OverdueNotificationConsumer" section, the PDF-generation step
+    /// (<see cref="IInvoicePdfService.GenerateAsync"/>) is deliberately inside the same try/catch as
+    /// the <see cref="IEmailSender.SendAsync"/> call below: if the invoice can no longer be loaded
+    /// (or PDF rendering otherwise throws), that must land the Notification row as
+    /// <see cref="NotificationStatus.Failed"/> rather than leaving it stuck <c>Pending</c> — exactly
+    /// the same crash-safe guarantee the send-failure path already provided, just extended to cover
+    /// this new step too. The row is still always written as <c>Pending</c> *before* either step
+    /// runs, so a crash here still only ever leaves a row behind to retry, never a second Sent row.
     /// </summary>
     private async Task<bool> ProcessMessageAsync(string payload, CancellationToken cancellationToken)
     {
@@ -154,6 +164,7 @@ public class OverdueNotificationConsumer : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
         var emailSender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+        var invoicePdfService = scope.ServiceProvider.GetRequiredService<IInvoicePdfService>();
 
         var notification = await dbContext.Notifications
             .FirstOrDefaultAsync(n => n.SourceEventId == @event.EventId, cancellationToken);
@@ -166,13 +177,16 @@ public class OverdueNotificationConsumer : BackgroundService
             return true;
         }
 
-        var message =
-            $"Invoice {@event.InvoiceNumber} for {@event.ClientName} is overdue " +
-            $"(due {@event.DueDate:yyyy-MM-dd}, total {@event.TotalAmount:F2}).";
+        // Letter-format subject/body (greeting, amount due, due date, closing) per requirements.md's
+        // "Overdue reminder email content" — built from the event's own fields rather than a second
+        // database round trip, since InvoiceOverdueEvent already carries everything the template
+        // needs. See InvoiceEmailContentBuilder.BuildOverdueReminder's doc comment.
+        var (subject, body) = InvoiceEmailContentBuilder.BuildOverdueReminder(
+            @event.InvoiceNumber, @event.ClientName, @event.TotalAmount, @event.DueDate);
 
         if (notification is null)
         {
-            // Doesn't exist yet: record intent *before* attempting the send.
+            // Doesn't exist yet: record intent *before* attempting PDF generation or the send.
             notification = new Notification
             {
                 Id = Guid.NewGuid(),
@@ -180,7 +194,7 @@ public class OverdueNotificationConsumer : BackgroundService
                 Status = NotificationStatus.Pending,
                 NotificationType = NotificationType.OverdueReminder,
                 Channel = "Email",
-                Message = message,
+                Message = body,
                 SourceEventId = @event.EventId
             };
 
@@ -193,11 +207,16 @@ public class OverdueNotificationConsumer : BackgroundService
         bool sent;
         try
         {
+            // Same assembly (Invoice+LineItems+Client+Business) and rendering IInvoicePdfService
+            // already performs for the Send/Resend email flow — reused here rather than duplicated.
+            var pdf = await invoicePdfService.GenerateAsync(@event.InvoiceId, @event.BusinessId, cancellationToken);
+            var attachment = new EmailAttachment($"{pdf.InvoiceNumber}.pdf", pdf.Content, "application/pdf");
+
             await emailSender.SendAsync(
                 @event.ClientEmail,
-                $"Invoice {@event.InvoiceNumber} is overdue",
-                message,
-                Array.Empty<EmailAttachment>(),
+                subject,
+                body,
+                new[] { attachment },
                 cancellationToken);
             notification.Status = NotificationStatus.Sent;
             notification.SentAt = DateTime.UtcNow;

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using InvoiceTracker.Application.Common.Exceptions;
 using InvoiceTracker.Application.Common.Interfaces;
 using InvoiceTracker.Application.Common.Models;
 using InvoiceTracker.Domain.Entities;
@@ -64,11 +65,43 @@ public class OverdueNotificationConsumerTests
         DateTime.UtcNow.AddDays(-1),
         1500.00m);
 
+    /// <summary>
+    /// Builds an <see cref="IInvoicePdfService"/> substitute whose <c>GenerateAsync</c> always
+    /// succeeds with a canned PDF — the default for every test except the one specifically
+    /// covering PDF generation failure.
+    /// </summary>
+    private static IInvoicePdfService MakeWorkingPdfService(string invoiceNumber = "INV-0001")
+    {
+        var pdfService = Substitute.For<IInvoicePdfService>();
+        pdfService
+            .GenerateAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new InvoicePdfGenerationResult(new byte[] { 1, 2, 3 }, invoiceNumber));
+        return pdfService;
+    }
+
     [Fact]
-    public async Task NoExistingNotification_InsertsPendingRow_SendsEmail_ThenUpdatesToSent()
+    public async Task NoExistingNotification_InsertsPendingRow_GeneratesPdf_SendsEmail_ThenUpdatesToSent()
     {
         var emailSender = Substitute.For<IEmailSender>();
-        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services => services.AddSingleton(emailSender));
+        var pdfService = MakeWorkingPdfService();
+
+        IReadOnlyList<EmailAttachment>? capturedAttachments = null;
+        string? capturedSubject = null;
+        string? capturedBody = null;
+        emailSender
+            .When(x => x.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                capturedSubject = call.ArgAt<string>(1);
+                capturedBody = call.ArgAt<string>(2);
+                capturedAttachments = call.ArgAt<IReadOnlyList<EmailAttachment>>(3);
+            });
+
+        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services =>
+        {
+            services.AddSingleton(emailSender);
+            services.AddSingleton(pdfService);
+        });
 
         var eventId = Guid.NewGuid();
         var @event = MakeEvent(eventId);
@@ -77,8 +110,27 @@ public class OverdueNotificationConsumerTests
         var consumer = CreateConsumer(scopeFactory);
         var processedSuccessfully = await ProcessMessageAsyncWithResult(consumer, payload);
 
+        // The PDF is generated using the event's own invoiceId/businessId — no separate lookup.
+        await pdfService.Received(1).GenerateAsync(@event.InvoiceId, @event.BusinessId, Arg.Any<CancellationToken>());
+
         await emailSender.Received(1).SendAsync(
             @event.ClientEmail, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>());
+
+        // Subject/body match the new letter-format overdue reminder template, not the old one-line
+        // message.
+        capturedSubject.Should().Be($"Invoice {@event.InvoiceNumber} is overdue");
+        capturedBody.Should().Contain($"Dear {@event.ClientName},");
+        capturedBody.Should().Contain($"This is a reminder that invoice {@event.InvoiceNumber} is now overdue.");
+        capturedBody.Should().Contain($"Amount due: {@event.TotalAmount:F2}");
+        capturedBody.Should().Contain($"Due date: {@event.DueDate:yyyy-MM-dd}");
+        capturedBody.Should().Contain("Please arrange payment as soon as possible. A copy of the invoice is attached for your reference.");
+        capturedBody.Should().Contain("Thank you.");
+
+        // The PDF generated above is what gets passed through as the email's attachment.
+        capturedAttachments.Should().ContainSingle();
+        capturedAttachments![0].FileName.Should().Be("INV-0001.pdf");
+        capturedAttachments[0].Content.Should().Equal(new byte[] { 1, 2, 3 });
+        capturedAttachments[0].ContentType.Should().Be("application/pdf");
 
         // This is the value the consume loop uses to decide whether to commit the Kafka offset:
         // true here means it would commit, which is correct once the row is Sent.
@@ -100,7 +152,12 @@ public class OverdueNotificationConsumerTests
     public async Task ExistingSentNotification_IsSkipped_AndEmailSenderIsNeverCalled()
     {
         var emailSender = Substitute.For<IEmailSender>();
-        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services => services.AddSingleton(emailSender));
+        var pdfService = MakeWorkingPdfService();
+        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services =>
+        {
+            services.AddSingleton(emailSender);
+            services.AddSingleton(pdfService);
+        });
 
         var eventId = Guid.NewGuid();
         var @event = MakeEvent(eventId);
@@ -129,6 +186,7 @@ public class OverdueNotificationConsumerTests
 
         await emailSender.DidNotReceive().SendAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>());
+        await pdfService.DidNotReceive().GenerateAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
 
         // The redelivery-skip path must still signal "safe to commit" — otherwise Kafka would
         // redeliver this message forever even though it was already fully processed.
@@ -148,7 +206,12 @@ public class OverdueNotificationConsumerTests
     public async Task ExistingPendingNotification_RetriesSend_UsingTheExistingRow_NoDuplicateInserted()
     {
         var emailSender = Substitute.For<IEmailSender>();
-        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services => services.AddSingleton(emailSender));
+        var pdfService = MakeWorkingPdfService();
+        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services =>
+        {
+            services.AddSingleton(emailSender);
+            services.AddSingleton(pdfService);
+        });
 
         var eventId = Guid.NewGuid();
         var @event = MakeEvent(eventId);
@@ -199,8 +262,13 @@ public class OverdueNotificationConsumerTests
         emailSender
             .SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Resend endpoint returned 404"));
+        var pdfService = MakeWorkingPdfService();
 
-        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services => services.AddSingleton(emailSender));
+        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services =>
+        {
+            services.AddSingleton(emailSender);
+            services.AddSingleton(pdfService);
+        });
 
         var eventId = Guid.NewGuid();
         var @event = MakeEvent(eventId);
@@ -220,6 +288,48 @@ public class OverdueNotificationConsumerTests
         // commit" so the consume loop leaves the Kafka offset uncommitted and the message gets
         // redelivered. Before the fix (EnableAutoCommit = true, no return-value-gated Commit call)
         // this distinction didn't exist and the offset would have advanced regardless of outcome.
+        processedSuccessfully.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PdfGenerationThrows_MarksNotificationFailed_NotLeftPending()
+    {
+        // Per architecture.md's updated OverdueNotificationConsumer section: if PDF generation
+        // itself throws (e.g. the invoice can no longer be loaded), that must land the Notification
+        // row as Failed rather than leaving it stuck Pending indefinitely — the same crash-safe
+        // outcome as a send failure, just triggered by the earlier step.
+        var emailSender = Substitute.For<IEmailSender>();
+        var pdfService = Substitute.For<IInvoicePdfService>();
+        pdfService
+            .GenerateAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new NotFoundException("Invoice not found."));
+
+        var scopeFactory = ScopeFactoryHelper.BuildScopeFactory(services =>
+        {
+            services.AddSingleton(emailSender);
+            services.AddSingleton(pdfService);
+        });
+
+        var eventId = Guid.NewGuid();
+        var @event = MakeEvent(eventId);
+        var payload = JsonSerializer.Serialize(@event, JsonOptions);
+
+        var consumer = CreateConsumer(scopeFactory);
+        var processedSuccessfully = await ProcessMessageAsyncWithResult(consumer, payload);
+
+        // PDF generation failing must never attempt the send at all.
+        await emailSender.DidNotReceive().SendAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<EmailAttachment>>(), Arg.Any<CancellationToken>());
+
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<IApplicationDbContext>();
+        var notification = await db.Notifications.SingleAsync(n => n.SourceEventId == eventId);
+
+        notification.Status.Should().Be(NotificationStatus.Failed);
+        notification.SentAt.Should().BeNull();
+
+        // Same reasoning as the send-failure case: a Failed row means the offset must be left
+        // uncommitted so Kafka redelivery remains the retry path.
         processedSuccessfully.Should().BeFalse();
     }
 
