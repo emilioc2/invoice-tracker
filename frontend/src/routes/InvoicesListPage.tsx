@@ -5,7 +5,11 @@ import * as invoicesApi from "@/api/invoicesApi";
 import { InvoiceFilters, type InvoiceFiltersValue } from "@/components/invoices/InvoiceFilters";
 import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { DataTable, type DataTableColumn } from "@/components/common/DataTable";
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableMobileCard,
+} from "@/components/common/DataTable";
 import { Pagination } from "@/components/common/Pagination";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -82,6 +86,33 @@ export function InvoicesListPage() {
     }
   };
 
+  const renderActions = (invoice: Invoice) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${invoice.invoiceNumber}`}>
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => navigate(`/invoices/${invoice.id}`)}>View</DropdownMenuItem>
+        {invoice.status === "Draft" && (
+          <DropdownMenuItem onSelect={() => navigate(`/invoices/${invoice.id}/edit`)}>
+            Edit
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          disabled={downloadingIds.has(invoice.id)}
+          onSelect={() => handleDownloadPdf(invoice)}
+        >
+          {downloadingIds.has(invoice.id) ? "Downloading…" : "Download PDF"}
+        </DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onSelect={() => setArchiveTarget(invoice)}>
+          Remove
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   const columns: DataTableColumn<Invoice>[] = [
     { key: "invoiceNumber", header: "Invoice #", cell: (invoice) => invoice.invoiceNumber },
     {
@@ -106,43 +137,38 @@ export function InvoicesListPage() {
       className: "w-10 text-right",
       cell: (invoice) => (
         <div onClick={(event) => event.stopPropagation()} className="text-right">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Actions for ${invoice.invoiceNumber}`}
-              >
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => navigate(`/invoices/${invoice.id}`)}>
-                View
-              </DropdownMenuItem>
-              {invoice.status === "Draft" && (
-                <DropdownMenuItem onSelect={() => navigate(`/invoices/${invoice.id}/edit`)}>
-                  Edit
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                disabled={downloadingIds.has(invoice.id)}
-                onSelect={() => handleDownloadPdf(invoice)}
-              >
-                {downloadingIds.has(invoice.id) ? "Downloading…" : "Download PDF"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => setArchiveTarget(invoice)}
-              >
-                Remove
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {renderActions(invoice)}
         </div>
       ),
     },
   ];
+
+  // Card view below the ~768px breakpoint (architecture.md's "Mobile responsiveness"
+  // paragraph): invoice number + status badge are the highest-value at-a-glance fields, so both
+  // are `emphasis`; client/due date/total surface as labeled fields below, same priority order
+  // as the desktop columns.
+  const mobileCard: DataTableMobileCard<Invoice> = {
+    fields: [
+      {
+        key: "heading",
+        emphasis: true,
+        value: (invoice) => (
+          <span className="flex items-center gap-2">
+            {invoice.invoiceNumber}
+            <InvoiceStatusBadge status={invoice.status} />
+          </span>
+        ),
+      },
+      { key: "client", label: "Client", value: (invoice) => invoice.clientName ?? "Unknown client" },
+      {
+        key: "dueDate",
+        label: "Due date",
+        value: (invoice) => new Date(invoice.dueDate).toLocaleDateString(),
+      },
+      { key: "total", label: "Total", value: (invoice) => formatCurrency(invoice.total) },
+    ],
+    actions: renderActions,
+  };
 
   return (
     <div className="space-y-6">
@@ -173,6 +199,7 @@ export function InvoicesListPage() {
         onRowClick={(invoice) => navigate(`/invoices/${invoice.id}`)}
         isLoading={isLoading}
         emptyMessage={emptyMessage}
+        mobileCard={mobileCard}
       />
 
       {data && data.totalPages > 1 && (

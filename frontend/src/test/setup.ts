@@ -21,6 +21,27 @@ beforeAll(() => {
     };
   }
 
+  // jsdom doesn't implement `window.matchMedia` at all (it's a layout API, and jsdom does no
+  // layout). `useIsMobile` (the hook behind the app's one ~768px responsive breakpoint — see
+  // architecture.md's "Mobile responsiveness" paragraph) calls it unconditionally, so every test
+  // needs at least a stub or mounting `AppShell`/`DataTable` throws immediately. Defaulting
+  // `matches` to `false` ("desktop") is deliberate: it keeps every pre-existing test's rendering
+  // byte-for-byte identical to before this hook existed. A test that wants to exercise the mobile
+  // layout overrides this per-test (e.g. `vi.spyOn(window, "matchMedia")...`).
+  if (!window.matchMedia) {
+    window.matchMedia = (query: string) =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => false),
+      }) as unknown as MediaQueryList;
+  }
+
   // Start the shared MSW server once for the whole suite; individual tests register handlers
   // with `server.use(...)`, and `onUnhandledRequest: "error"` makes an un-mocked request fail
   // the test loudly instead of silently resolving/rejecting in a confusing way.

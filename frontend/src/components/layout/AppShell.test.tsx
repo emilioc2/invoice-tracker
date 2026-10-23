@@ -1,13 +1,18 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/layout/AppShell";
 import { AuthProvider } from "@/context/AuthContext";
 import { server } from "@/test/server";
-import { clearSession, createTestQueryClient, seedAuthenticatedSession } from "@/test/test-utils";
+import {
+  clearSession,
+  createTestQueryClient,
+  mockViewport,
+  seedAuthenticatedSession,
+} from "@/test/test-utils";
 import type { AuthResult, MembershipOption } from "@/types/auth";
 
 // Covers architecture.md's "Business-selector and switcher UI" paragraph's switcher half:
@@ -208,5 +213,102 @@ describe("AppShell's BusinessSwitcher", () => {
       expect(localStorage.getItem("invoice-tracker.accessToken")).toBe(ADD_BUSINESS_RESULT.accessToken),
     );
     expect(capturedBody).toEqual({ businessName: "Third Business", businessEmail: "third@example.com" });
+  });
+});
+
+// Covers user_testing_defects.md item #18's shared-shell pass: below the ~768px breakpoint,
+// `AppShell`'s unconditional horizontal nav row is replaced by a hamburger trigger that opens a
+// drawer carrying everything the desktop header shows today (nav links, email, "Switch
+// business", "Log out"). jsdom doesn't evaluate real CSS, so `mockViewport` drives `useIsMobile`
+// directly rather than resizing an actual viewport — see `test-utils.tsx`'s doc comment.
+describe("AppShell's mobile nav (below the ~768px breakpoint)", () => {
+  beforeEach(() => {
+    clearSession();
+    mockViewport(true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders a hamburger trigger instead of the full nav row, with nav links hidden until opened", () => {
+    renderAppShell();
+
+    expect(screen.getByRole("button", { name: /open navigation menu/i })).toBeInTheDocument();
+    // The drawer's content (a Radix dialog) isn't mounted until opened — confirming this also
+    // confirms there's no duplicate "Dashboard" link sitting hidden-only-by-CSS in the DOM.
+    expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /switch business/i })).not.toBeInTheDocument();
+  });
+
+  it("opens the drawer on click and shows nav links, the user's email, Switch business, and Log out", async () => {
+    renderAppShell();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open navigation menu/i }));
+
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+    expect(within(drawer).getByRole("link", { name: "Clients" })).toBeInTheDocument();
+    expect(within(drawer).getByRole("link", { name: "Invoices" })).toBeInTheDocument();
+    expect(within(drawer).getByRole("link", { name: "Notifications" })).toBeInTheDocument();
+    expect(within(drawer).getByText("owner@example.com")).toBeInTheDocument();
+    expect(within(drawer).getByRole("button", { name: /switch business/i })).toBeInTheDocument();
+    expect(within(drawer).getByRole("button", { name: "Log out" })).toBeInTheDocument();
+  });
+
+  it("gives the drawer's close button a 44x44px minimum touch target", async () => {
+    renderAppShell();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open navigation menu/i }));
+
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("button", { name: "Close" })).toHaveClass("size-11");
+  });
+
+  it("hides the Users nav link for a Staff user inside the drawer too (item #16's role-aware nav)", async () => {
+    renderAppShell("Staff");
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open navigation menu/i }));
+
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(within(drawer).getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+  });
+
+  it("shows the Users nav link inside the drawer for an Owner user", async () => {
+    renderAppShell("Owner");
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open navigation menu/i }));
+
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("link", { name: "Users" })).toBeInTheDocument();
+  });
+
+  it("closes the drawer when a nav link inside it is clicked", async () => {
+    renderAppShell();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open navigation menu/i }));
+    const drawer = await screen.findByRole("dialog");
+
+    await user.click(within(drawer).getByRole("link", { name: "Clients" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("clicking Log out inside the drawer logs the user out", async () => {
+    renderAppShell();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /open navigation menu/i }));
+    const drawer = await screen.findByRole("dialog");
+
+    await user.click(within(drawer).getByRole("button", { name: "Log out" }));
+
+    await waitFor(() => expect(localStorage.getItem("invoice-tracker.accessToken")).toBeNull());
   });
 });

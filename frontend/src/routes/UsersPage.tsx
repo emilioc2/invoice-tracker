@@ -3,7 +3,11 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { DataTable, type DataTableColumn } from "@/components/common/DataTable";
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableMobileCard,
+} from "@/components/common/DataTable";
 import { UserStatusBadge } from "@/components/users/UserStatusBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -106,6 +110,36 @@ export function UsersPage() {
     }
   };
 
+  const renderActions = (u: User) => {
+    if (canDeactivate(u)) {
+      return (
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => {
+            setDeactivateError(null);
+            setDeactivateTarget(u);
+          }}
+        >
+          Deactivate
+        </Button>
+      );
+    }
+    if (canReactivate(u)) {
+      return (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={reactivateMutation.isPending}
+          onClick={() => handleReactivate(u)}
+        >
+          Reactivate
+        </Button>
+      );
+    }
+    return null;
+  };
+
   const columns: DataTableColumn<User>[] = [
     { key: "email", header: "Email", cell: (u) => u.email },
     { key: "role", header: "Role", cell: (u) => displayRole(u.role) },
@@ -118,41 +152,21 @@ export function UsersPage() {
       key: "actions",
       header: "",
       className: "w-10 text-right",
-      cell: (u) => {
-        if (canDeactivate(u)) {
-          return (
-            <div className="text-right">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => {
-                  setDeactivateError(null);
-                  setDeactivateTarget(u);
-                }}
-              >
-                Deactivate
-              </Button>
-            </div>
-          );
-        }
-        if (canReactivate(u)) {
-          return (
-            <div className="text-right">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={reactivateMutation.isPending}
-                onClick={() => handleReactivate(u)}
-              >
-                Reactivate
-              </Button>
-            </div>
-          );
-        }
-        return null;
-      },
+      cell: (u) => <div className="text-right">{renderActions(u)}</div>,
     },
   ];
+
+  // Card view below the ~768px breakpoint (architecture.md's "Mobile responsiveness"
+  // paragraph): email is the card's heading (the only field that uniquely identifies a user at
+  // a glance, since role/status are both low-cardinality), role/status surface as labeled fields.
+  const mobileCard: DataTableMobileCard<User> = {
+    fields: [
+      { key: "email", value: (u) => u.email, emphasis: true },
+      { key: "role", label: "Role", value: (u) => displayRole(u.role) },
+      { key: "status", label: "Status", value: (u) => <UserStatusBadge status={u.status} /> },
+    ],
+    actions: renderActions,
+  };
 
   return (
     <div className="space-y-6">
@@ -198,6 +212,7 @@ export function UsersPage() {
         getRowId={(u) => u.id}
         isLoading={isLoading}
         emptyMessage="No team members yet. Invite a Staff member to help manage this business."
+        mobileCard={mobileCard}
       />
 
       <Dialog

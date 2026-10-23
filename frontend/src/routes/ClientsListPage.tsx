@@ -2,7 +2,11 @@ import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { DataTable, type DataTableColumn } from "@/components/common/DataTable";
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableMobileCard,
+} from "@/components/common/DataTable";
 import { Pagination } from "@/components/common/Pagination";
 import { ClientForm } from "@/components/clients/ClientForm";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -44,6 +48,22 @@ export function ClientsListPage() {
   const createMutation = useCreateClientMutation();
   const removeMutation = useRemoveClientMutation();
 
+  const renderActions = (client: Client) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${client.name}`}>
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => navigate(`/clients/${client.id}`)}>View</DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onSelect={() => setRemoveTarget(client)}>
+          Remove
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   const columns: DataTableColumn<Client>[] = [
     { key: "name", header: "Name", cell: (client) => client.name },
     { key: "email", header: "Email", cell: (client) => client.email },
@@ -54,28 +74,23 @@ export function ClientsListPage() {
       className: "w-10 text-right",
       cell: (client) => (
         <div onClick={(event) => event.stopPropagation()} className="text-right">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${client.name}`}>
-                <MoreHorizontal className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => navigate(`/clients/${client.id}`)}>
-                View
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => setRemoveTarget(client)}
-              >
-                Remove
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {renderActions(client)}
         </div>
       ),
     },
   ];
+
+  // Card view below the ~768px breakpoint (architecture.md's "Mobile responsiveness"
+  // paragraph): name is the card's heading, email/phone surface as labeled fields — the same
+  // priority order as the desktop columns above, just without the dedicated header row.
+  const mobileCard: DataTableMobileCard<Client> = {
+    fields: [
+      { key: "name", value: (client) => client.name, emphasis: true },
+      { key: "email", label: "Email", value: (client) => client.email },
+      { key: "phone", label: "Phone", value: (client) => client.phone || "—" },
+    ],
+    actions: renderActions,
+  };
 
   return (
     <div className="space-y-6">
@@ -116,6 +131,7 @@ export function ClientsListPage() {
         onRowClick={(client) => navigate(`/clients/${client.id}`)}
         isLoading={isLoading}
         emptyMessage="No clients yet. Add your first client to start invoicing them."
+        mobileCard={mobileCard}
       />
 
       {data && data.totalPages > 1 && (

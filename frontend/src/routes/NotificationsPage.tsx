@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { DataTable, type DataTableColumn } from "@/components/common/DataTable";
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableMobileCard,
+} from "@/components/common/DataTable";
 import { Pagination } from "@/components/common/Pagination";
 import { NotificationStatusBadge } from "@/components/notifications/NotificationStatusBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -59,6 +63,43 @@ export function NotificationsPage() {
     },
   ];
 
+  // Card view below the ~768px breakpoint (architecture.md's "Mobile responsiveness"
+  // paragraph): the invoice link is the card's heading (what a reader is most likely scanning
+  // for), status/sent-at/channel surface as labeled fields, and the message — often a full
+  // sentence — gets its own unlabeled, wrapped block at the bottom rather than competing for
+  // space in the label/value row.
+  const mobileCard: DataTableMobileCard<Notification> = {
+    fields: [
+      {
+        key: "invoice",
+        emphasis: true,
+        value: (notification) => (
+          <Link to={`/invoices/${notification.invoiceId}`} className="underline-offset-2 hover:underline">
+            {notification.invoiceNumber ?? "Unknown invoice"}
+          </Link>
+        ),
+      },
+      {
+        key: "status",
+        label: "Status",
+        value: (notification) => <NotificationStatusBadge status={notification.status} />,
+      },
+      {
+        key: "sentAt",
+        label: "Sent at",
+        value: (notification) =>
+          notification.sentAt ? new Date(notification.sentAt).toLocaleString() : "—",
+      },
+      { key: "channel", label: "Channel", value: (notification) => notification.channel },
+      {
+        key: "message",
+        label: "Message",
+        className: "items-start whitespace-pre-wrap break-words",
+        value: (notification) => notification.message,
+      },
+    ],
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -81,6 +122,7 @@ export function NotificationsPage() {
         getRowId={(notification) => notification.id}
         isLoading={isLoading}
         emptyMessage="No notifications yet. You'll see delivery updates here once invoices start going out."
+        mobileCard={mobileCard}
       />
 
       {data && data.totalPages > 1 && (

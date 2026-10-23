@@ -1,3 +1,4 @@
+import { MenuIcon } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -19,8 +20,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { cn, displayRole } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useMembershipsQuery } from "@/hooks/useMemberships";
 
 // `ownerOnly` entries (currently just Users — requirements.md's Permissions section: Staff has
@@ -47,7 +56,17 @@ const DEFAULT_SWITCH_ERROR = "Unable to switch business. Please try again.";
  * tied to it — `GET /api/auth/memberships` is only ever called when this is actually opened, not
  * on every page load, matching architecture.md's "fetched lazily, only when opened" instruction.
  */
-function BusinessSwitcher() {
+function BusinessSwitcher({
+  triggerClassName,
+  onAfterAction,
+}: {
+  /** Extra classes for the trigger button — e.g. the mobile drawer wants it full-width with a
+   * 44px-minimum touch target, where the desktop header wants its existing compact `sm` size. */
+  triggerClassName?: string;
+  /** Called after a successful switch or "Add a business" submit, right before navigating to the
+   * dashboard — lets the mobile drawer close itself instead of staying open over the new page. */
+  onAfterAction?: () => void;
+}) {
   const { user, completeBusinessSelection } = useAuth();
   const navigate = useNavigate();
 
@@ -67,6 +86,7 @@ function BusinessSwitcher() {
     try {
       const result = await authApi.switchBusiness(businessId);
       completeBusinessSelection(result);
+      onAfterAction?.();
       navigate("/dashboard");
     } catch {
       setSwitchError(DEFAULT_SWITCH_ERROR);
@@ -86,7 +106,7 @@ function BusinessSwitcher() {
 
       <DropdownMenu open={isSwitcherOpen} onOpenChange={setIsSwitcherOpen}>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" className={triggerClassName}>
             Switch business
           </Button>
         </DropdownMenuTrigger>
@@ -135,6 +155,7 @@ function BusinessSwitcher() {
               const result = await authApi.addBusiness(values.businessName, values.businessEmail);
               completeBusinessSelection(result);
               setIsAddBusinessOpen(false);
+              onAfterAction?.();
               navigate("/dashboard");
             }}
           />
@@ -144,8 +165,71 @@ function BusinessSwitcher() {
   );
 }
 
+/**
+ * Collapsed nav for below the ~768px breakpoint (architecture.md's "Mobile responsiveness"
+ * paragraph): a hamburger trigger opens a left-side drawer carrying everything the desktop
+ * header shows today — nav links, the user's email, "Switch business", and "Log out" — sized for
+ * a 44×44px-minimum touch target throughout. Nav-link visibility reuses the same `visibleNavItems`
+ * the caller already computed, so the Owner-only "Users" filtering (item #16) applies identically
+ * here, not just in the desktop nav.
+ */
+function MobileNav({ visibleNavItems }: { visibleNavItems: typeof navItems }) {
+  const { user, logout } = useAuth();
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      <SheetTrigger asChild>
+        <Button variant="outline" size="icon" aria-label="Open navigation menu" className="h-11 w-11">
+          <MenuIcon className="size-5" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" className="flex w-4/5 max-w-xs flex-col gap-0 p-0">
+        <SheetHeader className="border-b border-border">
+          <SheetTitle>Eternity Invoicing</SheetTitle>
+        </SheetHeader>
+        <nav className="flex flex-1 flex-col gap-1 p-4">
+          {visibleNavItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              onClick={() => setIsOpen(false)}
+              className={({ isActive }) =>
+                cn(
+                  "flex min-h-11 items-center rounded-md px-3 text-base font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                  isActive && "bg-accent-subtle text-primary hover:text-primary",
+                )
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="flex flex-col gap-3 border-t border-border p-4">
+          {user && <p className="truncate text-sm text-muted-foreground">{user.email}</p>}
+          <BusinessSwitcher
+            triggerClassName="min-h-11 w-full justify-center"
+            onAfterAction={() => setIsOpen(false)}
+          />
+          <Button
+            variant="outline"
+            className="min-h-11 w-full justify-center"
+            onClick={() => {
+              setIsOpen(false);
+              logout();
+            }}
+          >
+            Log out
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const isMobile = useIsMobile();
   const visibleNavItems = navItems.filter((item) => !item.ownerOnly || user?.role === "Owner");
 
   return (
@@ -153,29 +237,35 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="relative border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <span className="text-lg font-semibold">Eternity Invoicing</span>
-          <nav className="flex items-center gap-4">
-            {visibleNavItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  cn(
-                    "rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
-                    isActive && "bg-accent-subtle text-primary hover:text-primary",
-                  )
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-          <div className="flex items-center gap-3">
-            {user && <span className="text-sm text-muted-foreground">{user.email}</span>}
-            <BusinessSwitcher />
-            <Button variant="outline" size="sm" onClick={logout}>
-              Log out
-            </Button>
-          </div>
+          {isMobile ? (
+            <MobileNav visibleNavItems={visibleNavItems} />
+          ) : (
+            <>
+              <nav className="flex items-center gap-4">
+                {visibleNavItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      cn(
+                        "rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                        isActive && "bg-accent-subtle text-primary hover:text-primary",
+                      )
+                    }
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </nav>
+              <div className="flex items-center gap-3">
+                {user && <span className="text-sm text-muted-foreground">{user.email}</span>}
+                <BusinessSwitcher />
+                <Button variant="outline" size="sm" onClick={logout}>
+                  Log out
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>
