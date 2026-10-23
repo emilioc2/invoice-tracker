@@ -62,7 +62,7 @@ export function NotificationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Notifications</h1>
+        <h1 className="font-display text-2xl font-semibold">Notifications</h1>
         <p className="text-sm text-muted-foreground">
           Audit log of overdue-invoice email notifications sent by the system.
         </p>
@@ -79,7 +79,8 @@ export function NotificationsPage() {
         columns={columns}
         rows={data?.items ?? []}
         getRowId={(notification) => notification.id}
-        emptyMessage={isLoading ? "Loading…" : "No notifications yet."}
+        isLoading={isLoading}
+        emptyMessage="No notifications yet. You'll see delivery updates here once invoices start going out."
       />
 
       {data && data.totalPages > 1 && (

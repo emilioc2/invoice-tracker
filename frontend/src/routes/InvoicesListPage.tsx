@@ -60,6 +60,15 @@ export function InvoicesListPage() {
 
   const archiveMutation = useArchiveInvoiceMutation();
 
+  // "Truly empty business" vs. "filtered to zero" (item 3's empty-state copy): any active filter
+  // means an empty result is a filtering outcome, not evidence the business has zero invoices.
+  const hasActiveFilters = Boolean(
+    filters.status || filters.clientId || filters.dateFrom || filters.dateTo,
+  );
+  const emptyMessage = hasActiveFilters
+    ? "No invoices match these filters. Try a different status or date range."
+    : "No invoices yet. Create your first invoice to get started.";
+
   const handleDownloadPdf = async (invoice: Invoice) => {
     setDownloadingIds((prev) => new Set(prev).add(invoice.id));
     try {
@@ -138,7 +147,7 @@ export function InvoicesListPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Invoices</h1>
+        <h1 className="font-display text-2xl font-semibold">Invoices</h1>
         <Button onClick={() => navigate("/invoices/new")}>New invoice</Button>
       </div>
 
@@ -162,7 +171,8 @@ export function InvoicesListPage() {
         rows={data?.items ?? []}
         getRowId={(invoice) => invoice.id}
         onRowClick={(invoice) => navigate(`/invoices/${invoice.id}`)}
-        emptyMessage={isLoading ? "Loading…" : "No invoices found."}
+        isLoading={isLoading}
+        emptyMessage={emptyMessage}
       />
 
       {data && data.totalPages > 1 && (

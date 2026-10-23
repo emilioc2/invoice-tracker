@@ -154,8 +154,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 to={item.to}
                 className={({ isActive }) =>
                   cn(
-                    "text-sm font-medium text-muted-foreground hover:text-foreground",
-                    isActive && "text-foreground",
+                    "rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                    isActive && "bg-accent-subtle text-primary hover:text-primary",
                   )
                 }
               >

@@ -167,7 +167,7 @@ export function InvoiceDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">{invoice.invoiceNumber}</h1>
+          <h1 className="font-display text-2xl font-semibold">{invoice.invoiceNumber}</h1>
           <InvoiceStatusBadge status={invoice.status} />
           {isArchived && <Badge variant="secondary">Archived</Badge>}
         </div>

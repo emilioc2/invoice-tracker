@@ -169,6 +169,38 @@ describe("InvoicesListPage navigation-state seeding (from Dashboard status cards
   });
 });
 
+describe("InvoicesListPage empty-state copy", () => {
+  beforeEach(() => {
+    seedAuthenticatedSession();
+  });
+
+  it("shows the 'no invoices yet' message when unfiltered and the business has none", async () => {
+    renderInvoicesListPage([]);
+
+    expect(
+      await screen.findByText("No invoices yet. Create your first invoice to get started."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the 'no invoices match these filters' message once a filter is applied", async () => {
+    const user = userEvent.setup();
+    const capturedUrls: string[] = [];
+    renderInvoicesListPage(capturedUrls);
+
+    await screen.findByText("No invoices yet. Create your first invoice to get started.");
+
+    await user.click(screen.getByRole("combobox", { name: /status/i }));
+    const listbox = await screen.findByRole("listbox");
+    await user.click(within(listbox).getByRole("option", { name: "Overdue" }));
+
+    expect(
+      await screen.findByText(
+        "No invoices match these filters. Try a different status or date range.",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("InvoicesListPage denormalized client name", () => {
   beforeEach(() => {
     seedAuthenticatedSession();

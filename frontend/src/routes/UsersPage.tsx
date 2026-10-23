@@ -4,8 +4,8 @@ import { useForm } from "react-hook-form";
 import { ApiError } from "@/api/client";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { DataTable, type DataTableColumn } from "@/components/common/DataTable";
+import { UserStatusBadge } from "@/components/users/UserStatusBadge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -112,9 +112,7 @@ export function UsersPage() {
     {
       key: "status",
       header: "Status",
-      cell: (u) => (
-        <Badge variant={u.status === "Active" ? "default" : "secondary"}>{u.status}</Badge>
-      ),
+      cell: (u) => <UserStatusBadge status={u.status} />,
     },
     {
       key: "actions",
@@ -159,7 +157,7 @@ export function UsersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Users</h1>
+        <h1 className="font-display text-2xl font-semibold">Users</h1>
         {isOwner && (
           <Button
             onClick={() => {
@@ -198,7 +196,8 @@ export function UsersPage() {
         columns={columns}
         rows={users ?? []}
         getRowId={(u) => u.id}
-        emptyMessage={isLoading ? "Loading…" : "No users found."}
+        isLoading={isLoading}
+        emptyMessage="No team members yet. Invite a Staff member to help manage this business."
       />
 
       <Dialog

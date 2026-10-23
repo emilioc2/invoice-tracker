@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ClientForm } from "@/components/clients/ClientForm";
+import { ClientStatusBadge } from "@/components/clients/ClientStatusBadge";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -53,8 +53,8 @@ export function ClientDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">{client.name}</h1>
-          {isRemoved && <Badge variant="secondary">Removed</Badge>}
+          <h1 className="font-display text-2xl font-semibold">{client.name}</h1>
+          {isRemoved && <ClientStatusBadge status={client.status} />}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setIsEditOpen(true)}>

@@ -80,7 +80,7 @@ export function ClientsListPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Clients</h1>
+        <h1 className="font-display text-2xl font-semibold">Clients</h1>
         <Button
           onClick={() => {
             createMutation.reset();
@@ -114,7 +114,8 @@ export function ClientsListPage() {
         rows={data?.items ?? []}
         getRowId={(client) => client.id}
         onRowClick={(client) => navigate(`/clients/${client.id}`)}
-        emptyMessage={isLoading ? "Loading…" : "No clients found."}
+        isLoading={isLoading}
+        emptyMessage="No clients yet. Add your first client to start invoicing them."
       />
 
       {data && data.totalPages > 1 && (

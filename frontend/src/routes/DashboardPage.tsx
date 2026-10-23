@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
 import { useDashboardSummaryQuery } from "@/hooks/useDashboard";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -23,7 +24,7 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Dashboard</h1>
+      <h1 className="font-display text-2xl font-semibold">Dashboard</h1>
 
       {isError && (
         <Alert variant="destructive">
@@ -32,7 +33,27 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      {isLoading && !data && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {isLoading && !data && (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={index} className="space-y-3 rounded-lg border border-border p-6">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-8 w-24" />
+                <Skeleton className="h-3 w-40" />
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="space-y-3 rounded-lg border border-border p-4">
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="h-6 w-10" />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {data && (
         <>
