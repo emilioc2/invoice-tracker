@@ -1,0 +1,33 @@
+# Build artifacts — the Dockerfile's build stage always restores/builds/
+# publishes from source; host-built output must never be copied into the
+# image (stale and/or built for the wrong OS/arch).
+**/bin/
+**/obj/
+
+# Test projects — not part of the published API image, and excluding them
+# keeps the build context sent to the Docker daemon smaller.
+tests/
+
+# IDE / OS cruft
+**/.vs/
+.vscode
+.idea
+.DS_Store
+
+# User-specific MSBuild overrides
+*.user
+
+# Test output
+**/TestResults/
+
+# Logs
+*.log
+
+# Local secrets — dotnet user-secrets normally lives outside the repo under
+# ~/.microsoft/usersecrets, but guard anyway in case a secrets file ever ends
+# up here; never let it reach the image.
+**/secrets.json
+
+# Version control
+.git
+.gitignore

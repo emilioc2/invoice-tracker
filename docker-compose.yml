@@ -18,6 +18,9 @@ services:
       retries: 5
 
   # Single-broker Kafka in KRaft mode (no Zookeeper) — sized for a small single-VM deployment.
+  # Two listeners: PLAINTEXT for other containers on this compose network (e.g. the `api`
+  # service, via the `kafka` hostname), EXTERNAL for host-based tools/dev (localhost:9092) —
+  # needed now that the API itself runs as a container rather than on the host.
   kafka:
     image: confluentinc/cp-kafka:7.6.1
     container_name: invoicetracker-kafka
@@ -27,9 +30,9 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -41,10 +44,49 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092"]
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092"]
       interval: 10s
       timeout: 10s
       retries: 10
+
+  # API image built from backend/Dockerfile (Build order step 13). ASPNETCORE_ENVIRONMENT is
+  # Development so the dev-placeholder Jwt:Secret in appsettings.Development.json satisfies the
+  # startup guard without a real secret baked into this file; ConnectionStrings and Kafka are
+  # overridden below to point at the other containers by service name instead of
+  # appsettings.Development.json's `localhost` values (correct only when the API ran on the host).
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: invoicetracker-api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=invoicetracker;Username=invoicetracker;Password=invoicetracker"
+      Kafka__BootstrapServers: "kafka:29092"
+    ports:
+      - "5100:5100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  # Frontend image built from frontend/Dockerfile (Build order step 13) — nginx serving the Vite
+  # production build. VITE_API_BASE_URL is baked in at build time and must resolve from the
+  # browser (on the host), hence localhost:5100, not the `api` in-network hostname.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:5100
+    container_name: invoicetracker-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
 
 volumes:
   postgres-data:
