@@ -31,3 +31,22 @@ export function MustChangePasswordGuard({ children }: { children: ReactNode }) {
 
   return <>{children}</>;
 }
+
+/**
+ * Role-aware guard, nested the same way as `MustChangePasswordGuard` above — blocks navigation
+ * to a screen whose `requiredRole` the current user's *internal* `role` doesn't match, redirecting
+ * to `/dashboard` (matching `App.tsx`'s `*` catch-all's redirect target) instead of rendering the
+ * screen. Checks the raw role value (e.g. `"Owner"`), never the display label ("Admin" per
+ * `displayRole` in `lib/utils.ts`) — see requirements.md's Permissions section: Staff has "no user
+ * management," which the Users screen itself is folded into (`GET /api/users` stays callable by
+ * any authenticated user at the API layer; this is a UI-only guard).
+ */
+export function RequireRole({ role, children }: { role: string; children: ReactNode }) {
+  const { user } = useAuth();
+
+  if (user?.role !== role) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}

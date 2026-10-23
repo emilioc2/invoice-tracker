@@ -23,12 +23,17 @@ import { cn, displayRole } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useMembershipsQuery } from "@/hooks/useMemberships";
 
+// `ownerOnly` entries (currently just Users — requirements.md's Permissions section: Staff has
+// "no user management," which the Users screen itself is folded into) are filtered out below for
+// any non-Owner. Checked against the *internal* role value ("Owner"), never the display label
+// ("Admin" per `displayRole` in lib/utils.ts). This only hides discovery of the nav link — the
+// actual access guard lives in App.tsx's `RequireRole` wrapper around the `/users` route.
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/clients", label: "Clients" },
   { to: "/invoices", label: "Invoices" },
   { to: "/notifications", label: "Notifications" },
-  { to: "/users", label: "Users" },
+  { to: "/users", label: "Users", ownerOnly: true },
 ];
 
 const DEFAULT_SWITCH_ERROR = "Unable to switch business. Please try again.";
@@ -141,6 +146,7 @@ function BusinessSwitcher() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const visibleNavItems = navItems.filter((item) => !item.ownerOnly || user?.role === "Owner");
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -148,7 +154,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <span className="text-lg font-semibold">Eternity Invoicing</span>
           <nav className="flex items-center gap-4">
-            {navItems.map((item) => (
+            {visibleNavItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

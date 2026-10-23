@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
-import { MustChangePasswordGuard, ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { MustChangePasswordGuard, ProtectedRoute, RequireRole } from "@/components/layout/ProtectedRoute";
 import { ChangePasswordPage } from "@/routes/ChangePasswordPage";
 import { ClientDetailPage } from "@/routes/ClientDetailPage";
 import { ClientsListPage } from "@/routes/ClientsListPage";
@@ -115,7 +115,9 @@ function App() {
         path="/users"
         element={
           <Protected>
-            <UsersPage />
+            <RequireRole role="Owner">
+              <UsersPage />
+            </RequireRole>
           </Protected>
         }
       />

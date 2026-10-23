@@ -32,12 +32,12 @@ const ADD_BUSINESS_RESULT: AuthResult = {
   memberships: null,
 };
 
-function renderAppShell() {
+function renderAppShell(role: "Owner" | "Staff" = "Owner") {
   seedAuthenticatedSession({
     userId: "user-1",
     businessId: "business-1",
-    email: "owner@example.com",
-    role: "Owner",
+    email: role === "Owner" ? "owner@example.com" : "staff@example.com",
+    role,
     mustChangePassword: false,
   });
 
@@ -54,6 +54,29 @@ function renderAppShell() {
     </QueryClientProvider>,
   );
 }
+
+// Covers user_testing_defects.md item #16 / requirements.md's Permissions section: Staff has "no
+// user management," which the Users screen itself is folded into — the nav link must be hidden
+// for Staff, checked against the internal role value, not the "Admin" display label (item #2).
+describe("AppShell's nav link visibility", () => {
+  beforeEach(() => {
+    clearSession();
+  });
+
+  it("hides the Users nav link for a Staff user", () => {
+    renderAppShell("Staff");
+
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    // Sanity check: other nav links are unaffected.
+    expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+  });
+
+  it("shows the Users nav link for an Owner user", () => {
+    renderAppShell("Owner");
+
+    expect(screen.getByRole("link", { name: "Users" })).toBeInTheDocument();
+  });
+});
 
 describe("AppShell's BusinessSwitcher", () => {
   beforeEach(() => {
