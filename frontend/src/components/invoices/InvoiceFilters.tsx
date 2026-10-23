@@ -39,7 +39,7 @@ export function InvoiceFilters({ value, onChange }: InvoiceFiltersProps) {
   });
 
   return (
-    <div className="flex flex-wrap items-end gap-4">
+    <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end">
       <div className="space-y-1.5">
         <Label htmlFor="invoice-filter-status">Status</Label>
         <Select
@@ -48,7 +48,7 @@ export function InvoiceFilters({ value, onChange }: InvoiceFiltersProps) {
             onChange({ ...value, status: next === ALL_VALUE ? undefined : (next as InvoiceStatus) })
           }
         >
-          <SelectTrigger id="invoice-filter-status" className="w-40">
+          <SelectTrigger id="invoice-filter-status" className="w-full md:w-40">
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -73,7 +73,7 @@ export function InvoiceFilters({ value, onChange }: InvoiceFiltersProps) {
         >
           <SelectTrigger
             id="invoice-filter-client"
-            className="w-48"
+            className="w-full md:w-48"
             aria-invalid={isClientsError}
             aria-describedby={isClientsError ? "invoice-filter-client-load-error" : undefined}
           >
@@ -102,7 +102,7 @@ export function InvoiceFilters({ value, onChange }: InvoiceFiltersProps) {
           type="date"
           value={value.dateFrom ?? ""}
           onChange={(event) => onChange({ ...value, dateFrom: event.target.value || undefined })}
-          className="w-40"
+          className="w-full md:w-40"
         />
       </div>
 
@@ -113,7 +113,7 @@ export function InvoiceFilters({ value, onChange }: InvoiceFiltersProps) {
           type="date"
           value={value.dateTo ?? ""}
           onChange={(event) => onChange({ ...value, dateTo: event.target.value || undefined })}
-          className="w-40"
+          className="w-full md:w-40"
         />
       </div>
     </div>
