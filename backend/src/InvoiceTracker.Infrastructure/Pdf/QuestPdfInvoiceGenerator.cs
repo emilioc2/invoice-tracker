@@ -1,5 +1,6 @@
 using System.Globalization;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Models;
 using InvoiceTracker.Domain.Entities;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -110,7 +111,7 @@ public class QuestPdfInvoiceGenerator : IPdfGenerator
                 summaryColumn.Item().Row(row =>
                 {
                     row.RelativeItem().Text("Subtotal");
-                    row.ConstantItem(100).AlignRight().Text(FormatCurrency(invoice.Subtotal));
+                    row.ConstantItem(100).AlignRight().Text(CurrencyFormatter.Format(invoice.Subtotal));
                 });
 
                 summaryColumn.Item().Row(row =>
@@ -119,7 +120,7 @@ public class QuestPdfInvoiceGenerator : IPdfGenerator
                     // CreateInvoiceCommandValidator's "must be between 0 and 1" rule — scale by
                     // 100 for display.
                     row.RelativeItem().Text($"Tax ({(invoice.TaxRate * 100).ToString("0.##", CultureInfo.InvariantCulture)}%)");
-                    row.ConstantItem(100).AlignRight().Text(FormatCurrency(invoice.TaxAmount));
+                    row.ConstantItem(100).AlignRight().Text(CurrencyFormatter.Format(invoice.TaxAmount));
                 });
 
                 summaryColumn.Item().PaddingTop(5).LineHorizontal(1);
@@ -127,7 +128,7 @@ public class QuestPdfInvoiceGenerator : IPdfGenerator
                 summaryColumn.Item().PaddingTop(5).Row(row =>
                 {
                     row.RelativeItem().Text("Total").Bold();
-                    row.ConstantItem(100).AlignRight().Text(FormatCurrency(invoice.Total)).Bold();
+                    row.ConstantItem(100).AlignRight().Text(CurrencyFormatter.Format(invoice.Total)).Bold();
                 });
             });
 
@@ -179,20 +180,9 @@ public class QuestPdfInvoiceGenerator : IPdfGenerator
             {
                 table.Cell().PaddingVertical(3).Text(lineItem.Description);
                 table.Cell().PaddingVertical(3).AlignRight().Text(lineItem.Quantity.ToString("0.##", CultureInfo.InvariantCulture));
-                table.Cell().PaddingVertical(3).AlignRight().Text(FormatCurrency(lineItem.UnitPrice));
-                table.Cell().PaddingVertical(3).AlignRight().Text(FormatCurrency(lineItem.LineTotal));
+                table.Cell().PaddingVertical(3).AlignRight().Text(CurrencyFormatter.Format(lineItem.UnitPrice));
+                table.Cell().PaddingVertical(3).AlignRight().Text(CurrencyFormatter.Format(lineItem.LineTotal));
             }
         });
     }
-
-    // Formats amounts as "R 0,00" (ZAR, en-ZA style: Rand symbol + space, comma decimal separator,
-    // space-grouped thousands) to match the frontend's Intl.NumberFormat("en-ZA", { currency: "ZAR" })
-    // output — this project has no multi-currency support (explicitly out of scope per
-    // requirements.md) and PDFs are rendered server-side on an EC2 host whose OS locale isn't
-    // something this app controls, so hard-coding en-ZA here avoids amounts silently rendering in
-    // the wrong currency/format depending on wherever this happens to run. Note:
-    // decimal.ToString("C", en-ZA) renders "R250,00" with no space after the symbol, which doesn't
-    // match the frontend's "R 250,00" — so the symbol/space is applied manually around "N2".
-    private static string FormatCurrency(decimal amount) =>
-        $"R {amount.ToString("N2", CultureInfo.GetCultureInfo("en-ZA"))}";
 }

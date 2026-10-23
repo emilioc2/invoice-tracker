@@ -121,7 +121,7 @@ public class OverdueNotificationConsumerTests
         capturedSubject.Should().Be($"Invoice {@event.InvoiceNumber} is overdue");
         capturedBody.Should().Contain($"Dear {@event.ClientName},");
         capturedBody.Should().Contain($"This is a reminder that invoice {@event.InvoiceNumber} is now overdue.");
-        capturedBody.Should().Contain($"Amount due: {@event.TotalAmount:F2}");
+        capturedBody.Should().Contain($"Amount due: {CurrencyFormatter.Format(@event.TotalAmount)}");
         capturedBody.Should().Contain($"Due date: {@event.DueDate:yyyy-MM-dd}");
         capturedBody.Should().Contain("Please arrange payment as soon as possible. A copy of the invoice is attached for your reference.");
         capturedBody.Should().Contain("Thank you.");

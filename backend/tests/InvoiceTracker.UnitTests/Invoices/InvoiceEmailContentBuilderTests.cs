@@ -1,4 +1,5 @@
 using FluentAssertions;
+using InvoiceTracker.Application.Common.Models;
 using InvoiceTracker.Application.Invoices.Common;
 using InvoiceTracker.Domain.Enums;
 using InvoiceTracker.UnitTests.TestSupport;
@@ -13,6 +14,28 @@ namespace InvoiceTracker.UnitTests.Invoices;
 /// </summary>
 public class InvoiceEmailContentBuilderTests
 {
+    [Fact]
+    public void Build_FormatsAmountDue_AsZarCurrency_MatchingThePdf()
+    {
+        var business = InvoiceSeeding.MakeBusiness();
+        var client = InvoiceSeeding.MakeClient(business.Id);
+        var invoice = InvoiceSeeding.MakeInvoice(business.Id, client.Id, InvoiceStatus.Unpaid);
+        invoice.Total = 1100.00m;
+
+        var (_, body) = InvoiceEmailContentBuilder.Build(invoice, client);
+
+        body.Should().Contain($"Amount due: {CurrencyFormatter.Format(1100.00m)}");
+    }
+
+    [Fact]
+    public void BuildOverdueReminder_FormatsAmountDue_AsZarCurrency_MatchingThePdf()
+    {
+        var (_, body) = InvoiceEmailContentBuilder.BuildOverdueReminder(
+            "INV-0001", "Wayne Enterprises", 1100.00m, DateTime.UtcNow.AddDays(-1));
+
+        body.Should().Contain($"Amount due: {CurrencyFormatter.Format(1100.00m)}");
+    }
+
     [Fact]
     public void Build_IncludesPaymentDetailsLine_WhenInvoiceHasPaymentDetails()
     {

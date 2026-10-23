@@ -1,3 +1,4 @@
+using InvoiceTracker.Application.Common.Models;
 using InvoiceTracker.Domain.Entities;
 
 namespace InvoiceTracker.Application.Invoices.Common;
@@ -23,7 +24,7 @@ public static class InvoiceEmailContentBuilder
         var body =
             $"Dear {client.Name},\n\n" +
             $"Please find attached a copy of invoice {invoice.InvoiceNumber}.\n\n" +
-            $"Amount due: {invoice.Total:F2}\n" +
+            $"Amount due: {CurrencyFormatter.Format(invoice.Total)}\n" +
             $"Due date: {invoice.DueDate:yyyy-MM-dd}\n" +
             PaymentDetailsLine(invoice.PaymentDetails) +
             "\nThank you for your business.";
@@ -57,7 +58,7 @@ public static class InvoiceEmailContentBuilder
         var body =
             $"Dear {clientName},\n\n" +
             $"This is a reminder that invoice {invoiceNumber} is now overdue.\n\n" +
-            $"Amount due: {totalAmount:F2}\n" +
+            $"Amount due: {CurrencyFormatter.Format(totalAmount)}\n" +
             $"Due date: {dueDate:yyyy-MM-dd}\n" +
             PaymentDetailsLine(paymentDetails) +
             "\nPlease arrange payment as soon as possible. A copy of the invoice is attached for your reference.\n\n" +
