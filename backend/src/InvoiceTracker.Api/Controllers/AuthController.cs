@@ -137,18 +137,20 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Mid-session password change for an authenticated caller who knows their current
-    /// password — distinct from forgot/reset-password above. Requires a valid JWT (no
-    /// <see cref="AllowAnonymousAttribute"/>, so the app-wide fallback policy applies); the
-    /// explicit <see cref="AuthorizeAttribute"/> below is just documentation of that intent.
-    /// Used by Staff users completing the forced change after a temp-password login (see
-    /// architecture.md's "Forced password change for temp-password logins").
+    /// Mid-session, forced password change — distinct from forgot/reset-password above. Requires
+    /// a valid JWT (no <see cref="AllowAnonymousAttribute"/>, so the app-wide fallback policy
+    /// applies); the explicit <see cref="AuthorizeAttribute"/> below is just documentation of that
+    /// intent. Takes only the new password: the caller already holds a valid JWT issued moments
+    /// earlier at the login that used the temp password, which is proof enough, so there is no
+    /// current-password field or verification step. Used by Staff users completing the forced
+    /// change after a temp-password login (see architecture.md's "Forced password change for
+    /// temp-password logins") — this is the product's only password-change-while-logged-in route.
     /// </summary>
     [HttpPost("change-password")]
     [Authorize]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken cancellationToken)
     {
-        var command = new ChangePasswordCommand(request.CurrentPassword, request.NewPassword);
+        var command = new ChangePasswordCommand(request.NewPassword);
         await _mediator.Send(command, cancellationToken);
         return NoContent();
     }
@@ -168,4 +170,4 @@ public record ForgotPasswordRequest(string Email);
 
 public record ResetPasswordRequest(string Email, string Token, string NewPassword);
 
-public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+public record ChangePasswordRequest(string NewPassword);

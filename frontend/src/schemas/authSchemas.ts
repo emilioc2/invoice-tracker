@@ -65,11 +65,11 @@ export const resetPasswordSchema = z.object({
 });
 export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
 
-// Mirrors `ChangePasswordCommandValidator`: CurrentPassword, NewPassword. Distinct from
-// `resetPasswordSchema` — this is the mid-session, known-current-password flow (forced temp-
-// password change or a self-initiated change), not the reset-token flow.
+// Mirrors `ChangePasswordCommandValidator`: NewPassword only. No current-password field — the
+// caller already holds a valid JWT issued at the moment they authenticated with the temp
+// password, which is proof enough (see requirements.md's "Forced password change for
+// temp-password logins"). Distinct from `resetPasswordSchema`'s reset-token flow.
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, "Current password is required."),
   newPassword: passwordSchema,
 });
 export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;

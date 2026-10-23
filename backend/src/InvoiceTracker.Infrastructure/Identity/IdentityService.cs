@@ -96,7 +96,7 @@ public class IdentityService : IIdentityService
             : IdentityResultDto.Failure(result.Errors.Select(e => e.Description));
     }
 
-    public async Task<IdentityResultDto> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword)
+    public async Task<IdentityResultDto> SetPasswordAsync(Guid userId, string newPassword)
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
@@ -104,20 +104,20 @@ public class IdentityService : IIdentityService
             return IdentityResultDto.Failure(new[] { "User not found." });
         }
 
-        // Checked explicitly (rather than relying solely on ChangePasswordAsync's own internal
-        // check below) so a wrong current password always comes back as this one unambiguous
-        // failure path, with no state changed.
-        var currentPasswordIsValid = await _userManager.CheckPasswordAsync(user, currentPassword);
-        if (!currentPasswordIsValid)
+        // No current-password check: the caller already holds a valid JWT issued moments earlier
+        // at the login that used the (temp) password — see this method's own doc comment on
+        // IIdentityService. RemovePasswordAsync + AddPasswordAsync is used instead of
+        // UserManager.ChangePasswordAsync specifically because the latter requires the old password.
+        var removeResult = await _userManager.RemovePasswordAsync(user);
+        if (!removeResult.Succeeded)
         {
-            return IdentityResultDto.Failure(new[] { "Current password is incorrect." });
+            return IdentityResultDto.Failure(removeResult.Errors.Select(e => e.Description));
         }
 
-        var result = await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
-
-        if (!result.Succeeded)
+        var addResult = await _userManager.AddPasswordAsync(user, newPassword);
+        if (!addResult.Succeeded)
         {
-            return IdentityResultDto.Failure(result.Errors.Select(e => e.Description));
+            return IdentityResultDto.Failure(addResult.Errors.Select(e => e.Description));
         }
 
         // Forced password change (see architecture.md's "Forced password change for temp-password

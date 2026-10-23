@@ -84,16 +84,17 @@ public interface IIdentityService
     Task<IdentityResultDto> ResetPasswordAsync(string email, string token, string newPassword);
 
     /// <summary>
-    /// Mid-session password change for a caller who knows their current password (as opposed to
-    /// <see cref="ResetPasswordAsync"/>'s reset-token flow). Verifies
-    /// <paramref name="currentPassword"/> against the stored hash first — a mismatch fails here,
-    /// with no state changed, rather than falling through to <c>UserManager.ChangePasswordAsync</c>'s
-    /// own (equivalent) check, so the Application layer gets one unambiguous failure path. On
-    /// success, also clears the identity's <c>MustChangePassword</c> flag back to <c>false</c> — see
-    /// architecture.md's "Forced password change for temp-password logins". Returns a failure (with
-    /// a message callers should surface as a 400) if no credential-store user exists for
-    /// <paramref name="userId"/>, if <paramref name="currentPassword"/> doesn't match, or if the
-    /// underlying Identity operation otherwise rejects <paramref name="newPassword"/>.
+    /// Mid-session, forced password change for a caller resolved via <c>ICurrentUserService</c> —
+    /// as opposed to <see cref="ResetPasswordAsync"/>'s reset-token flow. No current-password
+    /// verification happens here: the caller already holds a valid JWT issued moments earlier at
+    /// the login that used the (temp) password, which is proof enough — see
+    /// architecture.md's "Forced password change for temp-password logins". Implemented via
+    /// <c>UserManager.RemovePasswordAsync</c> followed by <c>UserManager.AddPasswordAsync</c>
+    /// (rather than <c>UserManager.ChangePasswordAsync</c>, which requires the old password). On
+    /// success, also clears the identity's <c>MustChangePassword</c> flag back to <c>false</c>.
+    /// Returns a failure (with a message callers should surface as a 400) if no credential-store
+    /// user exists for <paramref name="userId"/>, or if the underlying Identity operation rejects
+    /// <paramref name="newPassword"/>.
     /// </summary>
-    Task<IdentityResultDto> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword);
+    Task<IdentityResultDto> SetPasswordAsync(Guid userId, string newPassword);
 }

@@ -29,12 +29,7 @@ function renderChangePasswordPage() {
   );
 }
 
-async function fillAndSubmit(
-  user: ReturnType<typeof userEvent.setup>,
-  currentPassword: string,
-  newPassword: string,
-) {
-  await user.type(screen.getByLabelText(/current \(temporary\) password/i), currentPassword);
+async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>, newPassword: string) {
   await user.type(screen.getByLabelText(/new password/i), newPassword);
   await user.click(screen.getByRole("button", { name: /set new password/i }));
 }
@@ -50,7 +45,7 @@ describe("ChangePasswordPage", () => {
     });
   });
 
-  it("on success, calls the API with the entered credentials, clears the flag, and navigates to /dashboard", async () => {
+  it("on success, calls the API with only the new password, clears the flag, and navigates to /dashboard", async () => {
     let capturedBody: unknown = null;
     server.use(
       http.post("*/api/auth/change-password", async ({ request }) => {
@@ -62,31 +57,30 @@ describe("ChangePasswordPage", () => {
     renderChangePasswordPage();
     const user = userEvent.setup();
 
-    await fillAndSubmit(user, "TempPass123", "NewStrongPass123");
+    await fillAndSubmit(user, "NewStrongPass123");
 
     await waitFor(() => expect(screen.getByText("Dashboard page")).toBeInTheDocument());
 
     expect(capturedBody).toEqual({
-      currentPassword: "TempPass123",
       newPassword: "NewStrongPass123",
     });
     const storedUser = JSON.parse(localStorage.getItem("invoice-tracker.user") ?? "null");
     expect(storedUser?.mustChangePassword).toBe(false);
   });
 
-  it("on a failed request (wrong current password), shows an error and does not navigate or clear the flag", async () => {
+  it("on a failed request, shows an error and does not navigate or clear the flag", async () => {
     server.use(
       http.post("*/api/auth/change-password", () =>
-        HttpResponse.json({ title: "Current password is incorrect." }, { status: 400 }),
+        HttpResponse.json({ title: "Unable to change password." }, { status: 400 }),
       ),
     );
 
     renderChangePasswordPage();
     const user = userEvent.setup();
 
-    await fillAndSubmit(user, "WrongTempPass1", "NewStrongPass123");
+    await fillAndSubmit(user, "NewStrongPass123");
 
-    expect(await screen.findByText("Current password is incorrect.")).toBeInTheDocument();
+    expect(await screen.findByText("Unable to change password.")).toBeInTheDocument();
     expect(screen.queryByText("Dashboard page")).not.toBeInTheDocument();
 
     const storedUser = JSON.parse(localStorage.getItem("invoice-tracker.user") ?? "null");

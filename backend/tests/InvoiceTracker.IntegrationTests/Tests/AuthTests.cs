@@ -209,18 +209,23 @@ public class AuthTests : IntegrationTestBase
 
         var response = await client.PostAsJsonAsync("/api/auth/change-password", new
         {
-            CurrentPassword = "Whatever1",
             NewPassword = "NewPassword1"
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>
+    /// There is no current-password check anymore (see architecture.md's "Forced password change
+    /// for temp-password logins" / <c>ChangePasswordCommandHandler</c>'s doc comment) — the only
+    /// way this endpoint now rejects a request server-side is the new password itself failing the
+    /// shared password-strength rules, which still leaves <c>MustChangePassword</c> untouched.
+    /// </summary>
     [Fact]
-    public async Task ChangePassword_WithWrongCurrentPassword_ReturnsBadRequest_AndMustChangePasswordStaysTrue()
+    public async Task ChangePassword_WithWeakNewPassword_ReturnsBadRequest_AndMustChangePasswordStaysTrue()
     {
-        var (ownerClient, _) = await RegisterBusinessAsync("mcp-wrong-current");
-        var staffEmail = UniqueEmail("mcp-wrong-current-staff");
+        var (ownerClient, _) = await RegisterBusinessAsync("mcp-weak-new");
+        var staffEmail = UniqueEmail("mcp-weak-new-staff");
         var createResponse = await ownerClient.PostAsJsonAsync("/api/users", new { Email = staffEmail });
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var tempPassword = ExtractTempPassword(staffEmail);
@@ -232,8 +237,7 @@ public class AuthTests : IntegrationTestBase
 
         var changeResponse = await staffClient.PostAsJsonAsync("/api/auth/change-password", new
         {
-            CurrentPassword = "TotallyWrongPassword1",
-            NewPassword = "BrandNewPassword1"
+            NewPassword = "weak"
         });
 
         changeResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -262,7 +266,6 @@ public class AuthTests : IntegrationTestBase
         const string newPassword = "BrandNewPassword1";
         var changeResponse = await staffClient.PostAsJsonAsync("/api/auth/change-password", new
         {
-            CurrentPassword = tempPassword,
             NewPassword = newPassword
         });
         changeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);

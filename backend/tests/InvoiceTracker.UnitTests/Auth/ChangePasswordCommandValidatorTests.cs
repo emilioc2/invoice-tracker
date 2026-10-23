@@ -7,26 +7,21 @@ namespace InvoiceTracker.UnitTests.Auth;
 /// <see cref="FluentValidation.TestHelper"/>-based tests for every rule actually declared by
 /// <see cref="ChangePasswordCommandValidator"/> — mirrors <c>ResetPasswordCommandValidatorTests</c>,
 /// confirming <c>NewPassword</c> goes through the same shared <c>RuleBuilderExtensions.PasswordRules()</c>.
+/// There is no <c>CurrentPassword</c> field/rule — see <see cref="ChangePasswordCommand"/>'s own
+/// doc comment.
 /// </summary>
 public class ChangePasswordCommandValidatorTests
 {
     private readonly ChangePasswordCommandValidator _validator = new();
 
     private static ChangePasswordCommand MakeValidCommand() =>
-        new("OldPassword1", "NewPassword1");
+        new("NewPassword1");
 
     [Fact]
     public void ValidCommand_PassesWithNoErrors()
     {
         var result = _validator.TestValidate(MakeValidCommand());
         result.ShouldNotHaveAnyValidationErrors();
-    }
-
-    [Fact]
-    public void EmptyCurrentPassword_IsRejected()
-    {
-        var result = _validator.TestValidate(MakeValidCommand() with { CurrentPassword = "" });
-        result.ShouldHaveValidationErrorFor(x => x.CurrentPassword);
     }
 
     [Theory]

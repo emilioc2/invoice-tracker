@@ -29,4 +29,5 @@ docker-compose.override.yml
 
 # Personal notes, not a project deliverable
 SOLUTIONS_NOTES.md
+user_testing_defects.md
 

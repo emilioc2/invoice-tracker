@@ -90,11 +90,13 @@ export function resetPassword(
 
 // Mid-session forced/self-initiated password change — distinct from reset-password's reset-token
 // flow. Requires a valid JWT (no `skipAuth`), so the base wrapper attaches the current session's
-// Authorization header. Returns `204 No Content` on success, which `apiFetch` resolves to
+// Authorization header. No current-password is sent: already holding a valid JWT issued at login
+// time with the temp password is proof enough (see requirements.md's "Forced password change for
+// temp-password logins"). Returns `204 No Content` on success, which `apiFetch` resolves to
 // `undefined`, same pattern as `invoicesApi.ts`/`clientsApi.ts`'s `archive()`.
-export function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+export function changePassword(newPassword: string): Promise<void> {
   return apiFetch<void>("/api/auth/change-password", {
     method: "POST",
-    body: { currentPassword, newPassword },
+    body: { newPassword },
   });
 }

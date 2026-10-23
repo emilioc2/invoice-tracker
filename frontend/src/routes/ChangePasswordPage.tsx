@@ -13,7 +13,7 @@ import { changePasswordSchema, type ChangePasswordFormValues } from "@/schemas/a
 
 // Maps the backend ChangePasswordCommandValidator's PascalCase property names to this form's
 // fields.
-const FIELD_MAP = { CurrentPassword: "currentPassword", NewPassword: "newPassword" } as const;
+const FIELD_MAP = { NewPassword: "newPassword" } as const;
 
 /**
  * Forced, blocking interstitial for temp-password logins — reached only via
@@ -30,14 +30,14 @@ export function ChangePasswordPage() {
 
   const form = useForm<ChangePasswordFormValues>({
     resolver: zodResolver(changePasswordSchema),
-    defaultValues: { currentPassword: "", newPassword: "" },
+    defaultValues: { newPassword: "" },
   });
 
   const onSubmit = async (values: ChangePasswordFormValues) => {
     setFormError(null);
     setIsSubmitting(true);
     try {
-      await authApi.changePassword(values.currentPassword, values.newPassword);
+      await authApi.changePassword(values.newPassword);
       // No new JWT is issued (none is needed) — just clear the flag so the guard lets the user
       // through, same session.
       clearMustChangePassword();
@@ -68,25 +68,6 @@ export function ChangePasswordPage() {
         )}
 
         <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)} noValidate>
-          <div className="space-y-1.5">
-            <Label htmlFor="currentPassword">Current (temporary) password</Label>
-            <Input
-              id="currentPassword"
-              type="password"
-              autoComplete="current-password"
-              aria-invalid={!!form.formState.errors.currentPassword}
-              aria-describedby={
-                form.formState.errors.currentPassword ? "currentPassword-error" : undefined
-              }
-              {...form.register("currentPassword")}
-            />
-            {form.formState.errors.currentPassword && (
-              <p id="currentPassword-error" className="text-sm text-destructive">
-                {form.formState.errors.currentPassword.message}
-              </p>
-            )}
-          </div>
-
           <div className="space-y-1.5">
             <Label htmlFor="newPassword">New password</Label>
             <Input
