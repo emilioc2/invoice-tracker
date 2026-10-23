@@ -142,11 +142,12 @@ public class AuthTests : IntegrationTestBase
         var sentEmail = Factory.EmailSender.FindLatestTo(auth.Email);
         sentEmail.Should().NotBeNull("ForgotPassword should have sent a reset token via IEmailSender");
 
-        // Matches ForgotPasswordCommandHandler's email body:
-        // "Use the following token to reset your Eternity Invoicing password: {token}".
-        var tokenMatch = Regex.Match(sentEmail!.Body, "password: (?<token>.+)$");
-        tokenMatch.Success.Should().BeTrue("the fake email body should contain the reset token");
-        var resetToken = tokenMatch.Groups["token"].Value;
+        // Matches ForgotPasswordCommandHandler's email body: a clickable link of the form
+        // "{frontendBaseUrl}/reset-password?email={encodedEmail}&token={encodedToken}" — the
+        // token is URL-encoded in the link, so it's decoded back here before use.
+        var tokenMatch = Regex.Match(sentEmail!.Body, @"reset-password\?email=[^&]+&token=(?<token>[^\s]+)");
+        tokenMatch.Success.Should().BeTrue("the fake email body should contain a reset link with the token");
+        var resetToken = Uri.UnescapeDataString(tokenMatch.Groups["token"].Value);
 
         var newPassword = "NewP@ssw0rd456!";
         var resetResponse = await client.PostAsJsonAsync("/api/auth/reset-password", new

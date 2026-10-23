@@ -21,10 +21,10 @@ export function ResetPasswordPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Pre-fill from `?email=&token=` for when a real reset link exists later, but both stay fully
-  // editable — no real email is ever sent today (forgot/reset-password use a no-op IEmailSender),
-  // so pulling the token straight out of the dev database and pasting it in is the only way this
-  // flow is actually testable right now.
+  // Pre-fill from `?email=&token=` — ForgotPasswordCommandHandler emails a real clickable link to
+  // this page with both already set, via Resend. Both stay fully editable regardless, so a user
+  // who copy-pastes just the token (or a dev reading it out of the console/NoOpEmailSender log
+  // when no Resend API key is configured) can still fill the rest in by hand.
   const form = useForm<ResetPasswordFormValues>({
     resolver: zodResolver(resetPasswordSchema),
     defaultValues: {

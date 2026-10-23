@@ -58,7 +58,11 @@ public class RoleAuthorizationTests : IntegrationTestBase
         await staffClient.PostAsJsonAsync("/api/auth/forgot-password", new { Email = staffUser.Email });
         var sentEmail = Factory.EmailSender.FindLatestTo(staffUser.Email);
         sentEmail.Should().NotBeNull();
-        var token = System.Text.RegularExpressions.Regex.Match(sentEmail!.Body, "password: (?<token>.+)$").Groups["token"].Value;
+        // Matches ForgotPasswordCommandHandler's email body: a clickable link of the form
+        // "{frontendBaseUrl}/reset-password?email={encodedEmail}&token={encodedToken}" — the
+        // token is URL-encoded in the link, so it's decoded back here before use.
+        var token = Uri.UnescapeDataString(System.Text.RegularExpressions.Regex
+            .Match(sentEmail!.Body, @"reset-password\?email=[^&]+&token=(?<token>[^\s]+)").Groups["token"].Value);
 
         const string staffPassword = "StaffP@ssw0rd123!";
         var resetResponse = await staffClient.PostAsJsonAsync("/api/auth/reset-password", new
@@ -135,7 +139,11 @@ public class RoleAuthorizationTests : IntegrationTestBase
         await staffClient.PostAsJsonAsync("/api/auth/forgot-password", new { Email = staffUser.Email });
         var sentEmail = Factory.EmailSender.FindLatestTo(staffUser.Email);
         sentEmail.Should().NotBeNull();
-        var token = System.Text.RegularExpressions.Regex.Match(sentEmail!.Body, "password: (?<token>.+)$").Groups["token"].Value;
+        // Matches ForgotPasswordCommandHandler's email body: a clickable link of the form
+        // "{frontendBaseUrl}/reset-password?email={encodedEmail}&token={encodedToken}" — the
+        // token is URL-encoded in the link, so it's decoded back here before use.
+        var token = Uri.UnescapeDataString(System.Text.RegularExpressions.Regex
+            .Match(sentEmail!.Body, @"reset-password\?email=[^&]+&token=(?<token>[^\s]+)").Groups["token"].Value);
 
         const string staffPassword = "ReactivatedP@ss123!";
         var resetResponse = await staffClient.PostAsJsonAsync("/api/auth/reset-password", new
@@ -168,7 +176,11 @@ public class RoleAuthorizationTests : IntegrationTestBase
         var staffClient = CreateClient();
         await staffClient.PostAsJsonAsync("/api/auth/forgot-password", new { Email = staffUser.Email });
         var sentEmail = Factory.EmailSender.FindLatestTo(staffUser.Email);
-        var token = System.Text.RegularExpressions.Regex.Match(sentEmail!.Body, "password: (?<token>.+)$").Groups["token"].Value;
+        // Matches ForgotPasswordCommandHandler's email body: a clickable link of the form
+        // "{frontendBaseUrl}/reset-password?email={encodedEmail}&token={encodedToken}" — the
+        // token is URL-encoded in the link, so it's decoded back here before use.
+        var token = Uri.UnescapeDataString(System.Text.RegularExpressions.Regex
+            .Match(sentEmail!.Body, @"reset-password\?email=[^&]+&token=(?<token>[^\s]+)").Groups["token"].Value);
 
         const string staffPassword = "StaffReactivate@123!";
         await staffClient.PostAsJsonAsync("/api/auth/reset-password", new
@@ -227,7 +239,11 @@ public class RoleAuthorizationTests : IntegrationTestBase
         await staffClient.PostAsJsonAsync("/api/auth/forgot-password", new { Email = staffUser.Email });
         var sentEmail = Factory.EmailSender.FindLatestTo(staffUser.Email);
         sentEmail.Should().NotBeNull();
-        var token = System.Text.RegularExpressions.Regex.Match(sentEmail!.Body, "password: (?<token>.+)$").Groups["token"].Value;
+        // Matches ForgotPasswordCommandHandler's email body: a clickable link of the form
+        // "{frontendBaseUrl}/reset-password?email={encodedEmail}&token={encodedToken}" — the
+        // token is URL-encoded in the link, so it's decoded back here before use.
+        var token = Uri.UnescapeDataString(System.Text.RegularExpressions.Regex
+            .Match(sentEmail!.Body, @"reset-password\?email=[^&]+&token=(?<token>[^\s]+)").Groups["token"].Value);
 
         const string staffPassword = "DeactivateLoginBlocked1!";
         var resetResponse = await staffClient.PostAsJsonAsync("/api/auth/reset-password", new

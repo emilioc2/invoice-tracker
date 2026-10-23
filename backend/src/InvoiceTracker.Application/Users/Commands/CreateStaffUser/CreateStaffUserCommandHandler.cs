@@ -6,6 +6,7 @@ using InvoiceTracker.Domain.Entities;
 using InvoiceTracker.Domain.Enums;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace InvoiceTracker.Application.Users.Commands.CreateStaffUser;
 
@@ -29,17 +30,20 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
     private readonly IIdentityService _identityService;
     private readonly ICurrentUserService _currentUserService;
     private readonly IEmailSender _emailSender;
+    private readonly ILogger<CreateStaffUserCommandHandler> _logger;
 
     public CreateStaffUserCommandHandler(
         IApplicationDbContext dbContext,
         IIdentityService identityService,
         ICurrentUserService currentUserService,
-        IEmailSender emailSender)
+        IEmailSender emailSender,
+        ILogger<CreateStaffUserCommandHandler> logger)
     {
         _dbContext = dbContext;
         _identityService = identityService;
         _currentUserService = currentUserService;
         _emailSender = emailSender;
+        _logger = logger;
     }
 
     public async Task<UserDto> Handle(CreateStaffUserCommand request, CancellationToken cancellationToken)
@@ -82,12 +86,22 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
 
         var business = await _dbContext.Businesses.FirstAsync(b => b.Id == businessId, cancellationToken);
 
-        await _emailSender.SendAsync(
-            email,
-            $"You've been added to {business.Name}",
-            $"You've been added to {business.Name} on Eternity Invoicing. Log in with your existing password to get started.",
-            Array.Empty<EmailAttachment>(),
-            cancellationToken);
+        // Membership is already committed above — a send failure here (e.g. the sandbox email
+        // provider rejecting a recipient it isn't allowed to deliver to) must not surface as a
+        // request failure, since there's nothing left to roll back against. Log and move on.
+        try
+        {
+            await _emailSender.SendAsync(
+                email,
+                $"You've been added to {business.Name}",
+                $"You've been added to {business.Name} on Eternity Invoicing. Log in with your existing password to get started.",
+                Array.Empty<EmailAttachment>(),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send 'added to business' notification email to {Email} for business {BusinessId}.", email, businessId);
+        }
 
         return membership.ToDto(email);
     }
@@ -130,13 +144,23 @@ public class CreateStaffUserCommandHandler : IRequestHandler<CreateStaffUserComm
 
         // Email send happens after commit (not inside the transaction) — there's nothing to roll
         // back it against, and a send failure here shouldn't undo the already-committed account.
-        await _emailSender.SendAsync(
-            email,
-            "Your Eternity Invoicing account",
-            $"An account has been created for you. Temporary password: {tempPassword}. " +
-            "Please log in and change your password as soon as possible.",
-            Array.Empty<EmailAttachment>(),
-            cancellationToken);
+        // Caught (not rethrown) for the same reason: the account was already created successfully,
+        // so a delivery failure (e.g. the sandbox email provider rejecting a recipient it isn't
+        // allowed to deliver to) must not turn into a 500 for a request that actually succeeded.
+        try
+        {
+            await _emailSender.SendAsync(
+                email,
+                "Your Eternity Invoicing account",
+                $"An account has been created for you. Temporary password: {tempPassword}. " +
+                "Please log in and change your password as soon as possible.",
+                Array.Empty<EmailAttachment>(),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send new-account email to {Email} for business {BusinessId}.", email, businessId);
+        }
 
         // email is already on hand (it's what we just created the identity with) — no need to
         // round-trip through IIdentityService just to read it back.

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using InvoiceTracker.Application.Common.Interfaces;
+using InvoiceTracker.Application.Common.Models;
 using InvoiceTracker.Infrastructure.Email;
 using InvoiceTracker.Infrastructure.Identity;
 using InvoiceTracker.Infrastructure.Messaging;
@@ -100,6 +101,12 @@ public static class DependencyInjection
         // ResendSettings is bound unconditionally — harmless, and needed once a real API key is
         // configured.
         services.Configure<ResendSettings>(configuration.GetSection("Resend"));
+
+        // FrontendSettings (Application/Common/Models) — bound here the same way as every other
+        // settings class, even though the type itself lives in the Application layer rather than
+        // Infrastructure; ForgotPasswordCommandHandler needs it directly to build a clickable
+        // reset-password link.
+        services.Configure<FrontendSettings>(configuration.GetSection("Frontend"));
 
         // ResendEmailSender is used whenever a real Resend API key is configured — in any
         // environment, including Development (a deliberate runtime check rather than a purely
