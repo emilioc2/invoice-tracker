@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
@@ -19,6 +19,16 @@ import type { AuthResult, MembershipOption } from "@/types/auth";
 // GET /api/auth/memberships must only be called once the "Switch business" dropdown is actually
 // opened (never eagerly on page load), and the dropdown must render loading/empty/populated
 // states correctly, plus "Add a business" opening a dialog whose successful submit completes auth.
+//
+// On desktop, "Switch business" lives as a submenu nested inside the header's "Account" dropdown
+// (the header-declutter effort that replaced the old inline email/"Switch business"/"Log out"
+// row) — so each test below opens "Account" first, then its "Switch business" submenu, before
+// asserting on the switcher's contents.
+
+async function openSwitchBusinessSubmenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "Account" }));
+  await user.click(await screen.findByRole("menuitem", { name: /switch business/i }));
+}
 
 const MEMBERSHIPS: MembershipOption[] = [
   { businessId: "business-2", businessName: "Second Business", role: "Staff" },
@@ -95,6 +105,54 @@ describe("AppShell's nav link visibility", () => {
   });
 });
 
+// Covers the header-declutter request: the desktop header's inline email/"Switch
+// business"/"Log out" row is replaced by a single compact "Account" dropdown trigger, whose
+// contents only appear once opened.
+describe("AppShell's desktop Account menu", () => {
+  beforeEach(() => {
+    clearSession();
+  });
+
+  it("shows a compact Account trigger, with the email/Switch business/Log out cluster hidden until opened", () => {
+    renderAppShell();
+
+    expect(screen.getByRole("button", { name: "Account" })).toBeInTheDocument();
+    expect(screen.queryByText("owner@example.com")).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /switch business/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Log out" })).not.toBeInTheDocument();
+  });
+
+  it("opening the Account dropdown reveals the email as non-interactive text, Switch business, and Log out", async () => {
+    renderAppShell();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Account" }));
+
+    // The email is a plain label, not a selectable menu item — it must never carry
+    // `role="menuitem"` (that's the bug this test would catch: treating it as selectable).
+    expect(await screen.findByText("owner@example.com")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "owner@example.com" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /switch business/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Log out" })).toBeInTheDocument();
+  });
+
+  it("gives the Account trigger a 44px-minimum touch target", () => {
+    renderAppShell();
+
+    expect(screen.getByRole("button", { name: "Account" })).toHaveClass("h-11");
+  });
+
+  it("clicking Log out in the Account dropdown logs the user out", async () => {
+    renderAppShell();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Account" }));
+    await user.click(screen.getByRole("menuitem", { name: "Log out" }));
+
+    await waitFor(() => expect(localStorage.getItem("invoice-tracker.accessToken")).toBeNull());
+  });
+});
+
 describe("AppShell's BusinessSwitcher", () => {
   beforeEach(() => {
     clearSession();
@@ -116,7 +174,7 @@ describe("AppShell's BusinessSwitcher", () => {
     expect(membershipsCalled).toBe(false);
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /switch business/i }));
+    await openSwitchBusinessSubmenu(user);
 
     await waitFor(() => expect(membershipsCalled).toBe(true));
   });
@@ -136,7 +194,7 @@ describe("AppShell's BusinessSwitcher", () => {
     renderAppShell();
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /switch business/i }));
+    await openSwitchBusinessSubmenu(user);
 
     expect(await screen.findByText("Loading…")).toBeInTheDocument();
 
@@ -161,7 +219,7 @@ describe("AppShell's BusinessSwitcher", () => {
     renderAppShell();
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /switch business/i }));
+    await openSwitchBusinessSubmenu(user);
 
     expect(await screen.findByText("No other businesses found for this account.")).toBeInTheDocument();
   });
@@ -172,7 +230,7 @@ describe("AppShell's BusinessSwitcher", () => {
     renderAppShell();
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /switch business/i }));
+    await openSwitchBusinessSubmenu(user);
 
     expect(await screen.findByText("Second Business")).toBeInTheDocument();
     expect(screen.getByText("Staff")).toBeInTheDocument();
@@ -191,7 +249,7 @@ describe("AppShell's BusinessSwitcher", () => {
     renderAppShell();
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /switch business/i }));
+    await openSwitchBusinessSubmenu(user);
 
     expect(await screen.findByText("Second Business")).toBeInTheDocument();
     expect(screen.getByText("Admin")).toBeInTheDocument();
@@ -212,8 +270,16 @@ describe("AppShell's BusinessSwitcher", () => {
     renderAppShell();
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /switch business/i }));
-    await user.click(await screen.findByText("Add a business"));
+    await openSwitchBusinessSubmenu(user);
+    // `fireEvent.click` rather than `user.click` here: this item lives inside a nested
+    // `DropdownMenuSub`, and jsdom's `getBoundingClientRect` always returns a zeroed-out rect —
+    // Radix's submenu "pointer grace area" math (which guards against accidentally closing the
+    // submenu while moving the mouse from the trigger into its content) degenerates on that and
+    // swallows `user.click`'s simulated pointer-move-then-click sequence before it reaches this
+    // item. Real browsers report real rects, so this is a jsdom/testing artifact, not a bug —
+    // `user.click` works fine for every non-nested item elsewhere in this file.
+    fireEvent.click(await screen.findByText("Add a business"));
+    console.log("AFTER_CLICK_BODY", document.body.innerHTML.includes("Add a business") ? "has text" : "no text");
 
     expect(await screen.findByRole("heading", { name: "Add a business" })).toBeInTheDocument();
 

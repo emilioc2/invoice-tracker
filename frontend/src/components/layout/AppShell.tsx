@@ -1,4 +1,4 @@
-import { MenuIcon } from "lucide-react";
+import { MenuIcon, UserCircleIcon } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -18,6 +18,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -31,6 +34,7 @@ import { cn, displayRole } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useMembershipsQuery } from "@/hooks/useMemberships";
+import type { AddBusinessFormValues } from "@/schemas/authSchemas";
 
 // `ownerOnly` entries (currently just Users — requirements.md's Permissions section: Staff has
 // "no user management," which the Users screen itself is folded into) are filtered out below for
@@ -49,34 +53,28 @@ const navItems = [
 const DEFAULT_SWITCH_ERROR = "Unable to switch business. Please try again.";
 
 /**
- * "Switch business"/"Add a business" affordance (architecture.md's "Business-selector and
- * switcher UI" paragraph): an authenticated person whose identity holds more than one active
- * membership can switch their active session without re-entering their password.
+ * Shared state/logic behind the "Switch business"/"Add a business" affordance
+ * (architecture.md's "Business-selector and switcher UI" paragraph): an authenticated person
+ * whose identity holds more than one active membership can switch their active session without
+ * re-entering their password. Extracted into a hook so the desktop header's "Account" dropdown
+ * (which nests this as a submenu) and the mobile drawer's standalone "Switch business" button
+ * don't each duplicate the fetch/switch/add-business logic.
  *
- * The dropdown is controlled (`open`/`onOpenChange`) so `useMembershipsQuery`'s `enabled` can be
- * tied to it — `GET /api/auth/memberships` is only ever called when this is actually opened, not
- * on every page load, matching architecture.md's "fetched lazily, only when opened" instruction.
+ * `isOpen`/`setIsOpen` is meant to be wired to whichever dropdown/submenu actually displays the
+ * memberships list, so `useMembershipsQuery`'s `enabled` stays tied to it — `GET
+ * /api/auth/memberships` is only ever called once that UI is actually opened, not on every page
+ * load, matching architecture.md's "fetched lazily, only when opened" instruction.
  */
-function BusinessSwitcher({
-  triggerClassName,
-  onAfterAction,
-}: {
-  /** Extra classes for the trigger button — e.g. the mobile drawer wants it full-width with a
-   * 44px-minimum touch target, where the desktop header wants its existing compact `sm` size. */
-  triggerClassName?: string;
-  /** Called after a successful switch or "Add a business" submit, right before navigating to the
-   * dashboard — lets the mobile drawer close itself instead of staying open over the new page. */
-  onAfterAction?: () => void;
-}) {
+function useBusinessSwitcher(onAfterAction?: () => void) {
   const { user, completeBusinessSelection } = useAuth();
   const navigate = useNavigate();
 
-  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [isAddBusinessOpen, setIsAddBusinessOpen] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
-  const membershipsQuery = useMembershipsQuery(isSwitcherOpen);
+  const membershipsQuery = useMembershipsQuery(isOpen);
   const otherMemberships = (membershipsQuery.data ?? []).filter(
     (membership) => membership.businessId !== user?.businessId,
   );
@@ -96,72 +94,186 @@ function BusinessSwitcher({
     }
   };
 
+  const handleAddBusiness = async (values: AddBusinessFormValues) => {
+    const result = await authApi.addBusiness(values.businessName, values.businessEmail);
+    completeBusinessSelection(result);
+    setIsAddBusinessOpen(false);
+    onAfterAction?.();
+    navigate("/dashboard");
+  };
+
+  return {
+    isOpen,
+    setIsOpen,
+    isAddBusinessOpen,
+    setIsAddBusinessOpen,
+    switchError,
+    switchingId,
+    membershipsQuery,
+    otherMemberships,
+    handleSwitch,
+    handleAddBusiness,
+  };
+}
+
+type BusinessSwitcherState = ReturnType<typeof useBusinessSwitcher>;
+
+/**
+ * The menu contents shared by both the desktop "Account" dropdown's "Switch business" submenu
+ * and the mobile drawer's standalone switcher dropdown: loading/error/empty states, the list of
+ * other active memberships, and the "Add a business" entry point. Renders the same whether its
+ * parent is a top-level `DropdownMenuContent` or a nested `DropdownMenuSubContent` — both accept
+ * arbitrary `DropdownMenuItem`/`DropdownMenuLabel`/`DropdownMenuSeparator` children.
+ */
+function BusinessSwitcherMenuItems({ switcher }: { switcher: BusinessSwitcherState }) {
+  const { membershipsQuery, otherMemberships, switchingId, handleSwitch, setIsAddBusinessOpen } = switcher;
+
   return (
     <>
-      {switchError && (
+      <DropdownMenuLabel>Your businesses</DropdownMenuLabel>
+      {membershipsQuery.isLoading && (
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</p>
+      )}
+      {membershipsQuery.isError && (
+        <p className="px-2 py-1.5 text-xs text-destructive">
+          Unable to load your other businesses. Please try again.
+        </p>
+      )}
+      {membershipsQuery.isSuccess && otherMemberships.length === 0 && (
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">
+          No other businesses found for this account.
+        </p>
+      )}
+      {otherMemberships.map((membership) => (
+        <DropdownMenuItem
+          key={membership.businessId}
+          disabled={switchingId === membership.businessId}
+          onSelect={() => handleSwitch(membership.businessId)}
+        >
+          <span className="flex w-full items-center justify-between gap-2">
+            <span>{membership.businessName}</span>
+            <span className="text-xs text-muted-foreground">{displayRole(membership.role)}</span>
+          </span>
+        </DropdownMenuItem>
+      ))}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => setIsAddBusinessOpen(true)}>
+        Add a business
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+/** The "Add a business" dialog, shared the same way as `BusinessSwitcherMenuItems` above. */
+function AddBusinessDialog({ switcher }: { switcher: BusinessSwitcherState }) {
+  return (
+    <Dialog open={switcher.isAddBusinessOpen} onOpenChange={switcher.setIsAddBusinessOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add a business</DialogTitle>
+        </DialogHeader>
+        <AddBusinessForm onCancel={() => switcher.setIsAddBusinessOpen(false)} onSubmit={switcher.handleAddBusiness} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Mobile drawer's standalone "Switch business" button — its own top-level dropdown (as opposed
+ * to the desktop header's nested submenu, see `AccountMenu` below), since the drawer's "busy
+ * single row" problem (the thing this header-declutter effort was actually about) was specific to
+ * the desktop header: the drawer already stacks email/"Switch business"/"Log out" on their own
+ * full-width rows, which reads cleanly as-is.
+ */
+function BusinessSwitcher({
+  triggerClassName,
+  onAfterAction,
+}: {
+  /** Extra classes for the trigger button — the mobile drawer wants it full-width with a
+   * 44px-minimum touch target. */
+  triggerClassName?: string;
+  /** Called after a successful switch or "Add a business" submit, right before navigating to the
+   * dashboard — lets the mobile drawer close itself instead of staying open over the new page. */
+  onAfterAction?: () => void;
+}) {
+  const switcher = useBusinessSwitcher(onAfterAction);
+
+  return (
+    <>
+      {switcher.switchError && (
         <Alert variant="destructive" className="absolute left-0 right-0 top-full mt-2">
           <AlertTitle>Unable to switch business</AlertTitle>
-          <AlertDescription>{switchError}</AlertDescription>
+          <AlertDescription>{switcher.switchError}</AlertDescription>
         </Alert>
       )}
 
-      <DropdownMenu open={isSwitcherOpen} onOpenChange={setIsSwitcherOpen}>
+      <DropdownMenu open={switcher.isOpen} onOpenChange={switcher.setIsOpen}>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className={triggerClassName}>
             Switch business
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
-          <DropdownMenuLabel>Your businesses</DropdownMenuLabel>
-          {membershipsQuery.isLoading && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</p>
-          )}
-          {membershipsQuery.isError && (
-            <p className="px-2 py-1.5 text-xs text-destructive">
-              Unable to load your other businesses. Please try again.
-            </p>
-          )}
-          {membershipsQuery.isSuccess && otherMemberships.length === 0 && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">
-              No other businesses found for this account.
-            </p>
-          )}
-          {otherMemberships.map((membership) => (
-            <DropdownMenuItem
-              key={membership.businessId}
-              disabled={switchingId === membership.businessId}
-              onSelect={() => handleSwitch(membership.businessId)}
-            >
-              <span className="flex w-full items-center justify-between gap-2">
-                <span>{membership.businessName}</span>
-                <span className="text-xs text-muted-foreground">{displayRole(membership.role)}</span>
-              </span>
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setIsAddBusinessOpen(true)}>
-            Add a business
-          </DropdownMenuItem>
+          <BusinessSwitcherMenuItems switcher={switcher} />
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={isAddBusinessOpen} onOpenChange={setIsAddBusinessOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add a business</DialogTitle>
-          </DialogHeader>
-          <AddBusinessForm
-            onCancel={() => setIsAddBusinessOpen(false)}
-            onSubmit={async (values) => {
-              const result = await authApi.addBusiness(values.businessName, values.businessEmail);
-              completeBusinessSelection(result);
-              setIsAddBusinessOpen(false);
-              onAfterAction?.();
-              navigate("/dashboard");
-            }}
-          />
-        </DialogContent>
-      </Dialog>
+      <AddBusinessDialog switcher={switcher} />
+    </>
+  );
+}
+
+/**
+ * Desktop header's compact "Account" dropdown — replaces the old inline email/"Switch
+ * business"/"Log out" row, which looked busy with everything crammed into one line. Opening it
+ * reveals the user's email as a non-interactive label (a `DropdownMenuLabel`, not a selectable
+ * `DropdownMenuItem`), a "Switch business" submenu (nesting `BusinessSwitcherMenuItems` via
+ * `DropdownMenuSub`/`DropdownMenuSubContent` so it reuses the exact same fetch/switch/add-business
+ * logic as the mobile drawer's standalone button, rather than duplicating it), and "Log out".
+ */
+function AccountMenu() {
+  const { user, logout } = useAuth();
+  const switcher = useBusinessSwitcher();
+
+  return (
+    <>
+      {switcher.switchError && (
+        <Alert variant="destructive" className="absolute left-0 right-0 top-full mt-2">
+          <AlertTitle>Unable to switch business</AlertTitle>
+          <AlertDescription>{switcher.switchError}</AlertDescription>
+        </Alert>
+      )}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          {/* `h-11` (44px) overrides `size="sm"`'s default `h-7` to meet this app's 44px-minimum
+           * touch-target convention, per the explicit ask for this trigger — not otherwise applied
+           * to every desktop control. No `aria-label` needed: the visible "Account" text is
+           * already an adequate accessible name on its own, and the icon is purely decorative. */}
+          <Button variant="outline" size="sm" className="h-11 gap-1.5 px-3">
+            <UserCircleIcon aria-hidden="true" className="size-4" />
+            Account
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          {user && (
+            <DropdownMenuLabel className="truncate text-sm font-normal text-foreground">
+              {user.email}
+            </DropdownMenuLabel>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuSub open={switcher.isOpen} onOpenChange={switcher.setIsOpen}>
+            <DropdownMenuSubTrigger>Switch business</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-64">
+              <BusinessSwitcherMenuItems switcher={switcher} />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={logout}>Log out</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AddBusinessDialog switcher={switcher} />
     </>
   );
 }
@@ -229,7 +341,7 @@ function MobileNav({ visibleNavItems }: { visibleNavItems: typeof navItems }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const isMobile = useIsMobile();
   const visibleNavItems = navItems.filter((item) => !item.ownerOnly || user?.role === "Owner");
 
@@ -258,13 +370,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </NavLink>
                 ))}
               </nav>
-              <div className="flex items-center gap-3">
-                {user && <span className="text-sm text-muted-foreground">{user.email}</span>}
-                <BusinessSwitcher />
-                <Button variant="outline" size="sm" onClick={logout}>
-                  Log out
-                </Button>
-              </div>
+              <AccountMenu />
             </>
           )}
         </div>
