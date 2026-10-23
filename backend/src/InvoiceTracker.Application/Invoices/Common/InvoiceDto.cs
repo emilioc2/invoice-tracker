@@ -13,6 +13,7 @@ public record InvoiceDto(
     decimal TaxAmount,
     decimal Total,
     string? Notes,
+    string? PaymentDetails,
     DateTime LastModifiedDate,
     DateTime? ArchivedAt,
     IReadOnlyList<InvoiceLineItemDto> LineItems,

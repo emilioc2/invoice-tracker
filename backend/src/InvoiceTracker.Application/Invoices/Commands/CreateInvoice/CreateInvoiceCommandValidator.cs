@@ -20,6 +20,9 @@ public class CreateInvoiceCommandValidator : AbstractValidator<CreateInvoiceComm
         RuleFor(x => x.Notes)
             .MaximumLength(2000);
 
+        RuleFor(x => x.PaymentDetails)
+            .MaximumLength(2000);
+
         RuleFor(x => x.LineItems)
             .NotEmpty()
             .WithMessage("At least one line item is required.");

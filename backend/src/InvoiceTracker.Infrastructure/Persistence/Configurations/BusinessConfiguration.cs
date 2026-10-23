@@ -19,5 +19,10 @@ public class BusinessConfiguration : IEntityTypeConfiguration<Business>
         builder.Property(b => b.Email)
             .IsRequired()
             .HasMaxLength(256);
+
+        // Nullable free-text, no documented length/format constraint beyond a sane cap —
+        // mirrors the same MaximumLength(2000) already applied to Invoice.Notes.
+        builder.Property(b => b.PaymentDetails)
+            .HasMaxLength(2000);
     }
 }

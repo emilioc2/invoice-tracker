@@ -28,6 +28,13 @@ public class Invoice : ITenantScopedEntity
     public decimal TaxAmount { get; set; }
     public decimal Total { get; set; }
     public string? Notes { get; set; }
+
+    // Nullable free-text, mirroring Business.PaymentDetails: populated from the business's
+    // current PaymentDetails value at creation time unless the create request supplies an
+    // explicit override — a one-time snapshot, not a live reference (see architecture.md's
+    // "Business payment details"). Editable only while the invoice is still Draft, identical to
+    // the edit-lock rule that already governs line items/due date/client.
+    public string? PaymentDetails { get; set; }
     public DateTime LastModifiedDate { get; set; }
 
     // null = active, non-null = archived. Never hard-deleted.

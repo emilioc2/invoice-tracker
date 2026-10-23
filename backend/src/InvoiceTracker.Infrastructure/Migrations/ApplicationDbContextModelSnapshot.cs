@@ -38,6 +38,10 @@ namespace InvoiceTracker.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("PaymentDetails")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.HasKey("Id");
 
                     b.ToTable("Businesses", (string)null);
@@ -142,6 +146,10 @@ namespace InvoiceTracker.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("PaymentDetails")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 

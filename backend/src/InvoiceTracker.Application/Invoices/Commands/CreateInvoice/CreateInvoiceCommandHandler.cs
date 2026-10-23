@@ -34,6 +34,19 @@ public class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceCommand,
         var lineItems = InvoiceTotalsCalculator.BuildLineItems(request.LineItems);
         var (subtotal, taxAmount, total) = InvoiceTotalsCalculator.Calculate(lineItems, request.TaxRate);
 
+        // An explicit override on the request wins outright. Otherwise, snapshot the business's
+        // *current* PaymentDetails value now — a one-time copy, not a live reference, per
+        // architecture.md's "Business payment details": a later change to Business.PaymentDetails
+        // must never retroactively touch this invoice.
+        var paymentDetails = request.PaymentDetails;
+        if (paymentDetails is null)
+        {
+            paymentDetails = await _dbContext.Businesses
+                .Where(b => b.Id == businessId)
+                .Select(b => b.PaymentDetails)
+                .SingleAsync(cancellationToken);
+        }
+
         // Numbering (GetNextInvoiceNumberAsync) and the invoice insert below must commit together
         // — an explicit transaction is what makes that atomic.
         await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
@@ -58,6 +71,7 @@ public class CreateInvoiceCommandHandler : IRequestHandler<CreateInvoiceCommand,
             TaxAmount = taxAmount,
             Total = total,
             Notes = request.Notes,
+            PaymentDetails = paymentDetails,
             LastModifiedDate = now,
             LineItems = lineItems
         };

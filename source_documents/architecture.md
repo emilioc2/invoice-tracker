@@ -10,7 +10,7 @@ Clean/layered architecture: each layer only depends inward (API → Infrastructu
 backend/
 ├── src/
 │   ├── InvoiceTracker.Domain/              # Entities, enums, domain logic — zero external dependencies
-│   │   ├── Entities/                       # Business, UserBusinessMembership, Client, Invoice, InvoiceLineItem, Notification — UserBusinessMembership replaces the former 1:1 User entity; see "Multi-business membership" below
+│   │   ├── Entities/                       # Business, UserBusinessMembership, Client, Invoice, InvoiceLineItem, Notification — UserBusinessMembership replaces the former 1:1 User entity; see "Multi-business membership" below. Business and Invoice each gain a nullable `PaymentDetails` string column — see "Business payment details" below
 │   │   ├── Enums/                          # InvoiceStatus (Draft/Unpaid/Paid/Overdue/Cancelled), ClientStatus (Active/Removed), UserStatus (Active/Deactivated), UserRole (Owner/Staff), NotificationType (OverdueReminder/InvoiceSent)
 │   │   └── Events/                         # InvoiceOverdueEvent (the Kafka payload's domain-side shape)
 │   ├── InvoiceTracker.Application/          # Use cases + ports (interfaces), DTOs, validation
@@ -43,6 +43,9 @@ backend/
 │   │   │       └── GetDashboardSummary/
 │   │   ├── Notifications/
 │   │   │   └── Queries/ListNotifications/
+│   │   ├── Business/                       # the business's own profile/settings — scoped to the caller's current business
+│   │   │   ├── Commands/ UpdatePaymentDetails/
+│   │   │   └── Queries/ GetBusinessProfile/
 │   │   ├── Users/                          # operates on UserBusinessMembership rows, scoped to the caller's current business
 │   │   │   ├── Commands/ CreateStaffUser/, DeactivateUser/, ReactivateUser/
 │   │   │   └── Queries/ListUsers/
@@ -55,7 +58,7 @@ backend/
 │   │   ├── Email/                          # ResendEmailSender : IEmailSender (JSON POST with base64-encoded attachments, not multipart/form-data), NoOpEmailSender : IEmailSender (logs attachment filename/size) — ResendEmailSender is used when a real Resend API key is configured (any environment); NoOpEmailSender is the fallback otherwise, including Development without a key configured
 │   │   └── Pdf/                            # QuestPdfInvoiceGenerator : IPdfGenerator
 │   └── InvoiceTracker.Api/                  # Controllers, composition root, Program.cs
-│       ├── Controllers/                    # AuthController, UsersController, ClientsController, InvoicesController, NotificationsController, DashboardController
+│       ├── Controllers/                    # AuthController, UsersController, ClientsController, InvoicesController, NotificationsController, DashboardController, BusinessController
 │       ├── BackgroundServices/             # OverdueInvoiceScannerService — periodic scan, flips Unpaid→Overdue, publishes event
 │       └── Program.cs
 ├── tests/
@@ -158,6 +161,12 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 { "sub": "4f1e...", "businessId": "f02b...", "role": "Staff", "email": "sam@example.com", "jti": "..." }
 ```
 `sub` is the person's identity id and never changes across a switch; `businessId`/`role` always describe exactly the one business this particular token is scoped to. There is no claim listing all of a person's memberships — that list is only ever returned in the `select-business`/login-selection response body and the explicit switch-business UI's own lookup, never baked into a bearer token.
+
+### Business
+| Method | Route | Notes |
+|---|---|---|
+| GET | `/api/business` | Returns the caller's current business profile (`Id, Name, Email, PaymentDetails`) — any authenticated user, no role restriction (same any-authenticated-user precedent as `GET /api/users`) |
+| PUT | `/api/business/payment-details` | `{ paymentDetails }` (nullable string). Updates `Business.PaymentDetails` for the caller's business — any authenticated user (Owner or Staff), no `RequireRole` guard. A singular, non-plural route (`/api/business`, not `/api/businesses`) since a token is always scoped to exactly one business, matching the existing singular `Dashboard` pattern rather than introducing a separate `BusinessSettings` concept for what is currently a single field |
 
 ### Users (team management — Owner only except where noted)
 | Method | Route | Notes |
@@ -327,6 +336,20 @@ public record SendInvoiceResult(InvoiceDto Invoice, EmailDeliveryResult EmailDel
 
 Result shape: `public record ResendInvoiceEmailResult(EmailDeliveryResult EmailDelivery);`
 
+## Business payment details
+
+**Migration:** adds two nullable string columns — `Businesses.PaymentDetails` and `Invoices.PaymentDetails`. No backfill needed; existing rows default to `null`, which renders as "nothing" everywhere this field is read (see below).
+
+**`GetBusinessProfileQueryHandler` / `UpdatePaymentDetailsCommandHandler` (new, `Application/Business/`):** both resolve the target business as `ICurrentUserService.BusinessId`, never a client-supplied id — the same multi-tenancy rule as every other handler. `UpdatePaymentDetailsCommandHandler` takes `{ PaymentDetails: string? }` and writes it straight to `Business.PaymentDetails`; no FluentValidation rule beyond the nullable-string shape itself is needed, consistent with how `Invoice.Notes` also has no documented length/format constraint. Neither handler performs a role check (`Owner` vs `Staff`) — both are reachable by any authenticated member of the caller's business, per `requirements.md`'s "Business payment details" section and mirroring the existing `GET /api/users` any-authenticated-user precedent. `BusinessController` exposes these as `GET /api/business` and `PUT /api/business/payment-details` (see REST API routes above).
+
+**`CreateInvoiceCommandHandler` — resolving `Invoice.PaymentDetails`:** when the create request includes an explicit `paymentDetails` override, that value is used as-is. Otherwise, the handler reads the caller's `Business.PaymentDetails` (same `BusinessId`-scoped lookup already used for every other business-scoped read) and copies its current value onto the new `Invoice.PaymentDetails` at the moment of creation — a one-time snapshot, not a live reference. A later change to `Business.PaymentDetails` never retroactively touches invoices already created, the same "fixed once set" treatment this document already applies to `Invoice.IssueDate` once an invoice is sent.
+
+**`UpdateInvoiceCommandHandler` — editing `Invoice.PaymentDetails`:** treated exactly like the handler's other Draft-only-editable fields (line items, due date, client) — the existing Draft-only edit lock already documented for `PUT /api/invoices/{id}` applies unchanged: the field can be changed while the invoice is still `Draft`, and is rejected (along with the rest of the payload) once the invoice has moved past `Draft`. No special-casing is introduced for this field relative to the lock that already governs the rest of the invoice.
+
+**`QuestPdfInvoiceGenerator` — rendering:** a new section is added near the bottom of the invoice template, after the line items/totals block, rendered only when `Invoice.PaymentDetails` is non-empty — a small "Payment Details" heading followed by the free-text value. When `Invoice.PaymentDetails` is null/empty, the section (heading included) is omitted entirely rather than rendered empty.
+
+**`InvoiceEmailContentBuilder` — `Build(...)` and `BuildOverdueReminder(...)`:** both methods (Send/Resend's `Build(...)` and the overdue reminder's `BuildOverdueReminder(...)`, added alongside it per the "Overdue reminder email content" section above) append a payment-details line to the body — placed with the other invoice details, before the closing line — whenever the invoice's `PaymentDetails` is non-empty. When it's null/empty, neither method adds anything, so the body is byte-for-byte what it was before this feature. This applies the payment-details line to both email bodies, not just the PDF attachment, per `requirements.md`'s "Invoice email delivery" section.
+
 ## Forced password change for temp-password logins
 
 A Staff user's temp password (created by `CreateStaffUserCommandHandler` — see `requirements.md`'s "Multi-user onboarding") must be changed before that user can use the rest of the system. This is a new, mid-session flow — distinct from the existing `forgot-password`/`reset-password` pair, which remains a pre-auth, reset-token-based flow for "I don't remember my password at all." The forced-change flow instead assumes the caller already holds a valid JWT and knows their current (temp) password.
@@ -366,13 +389,13 @@ frontend/
 ├── src/
 │   ├── api/                        # typed fetch wrappers per resource — called by TanStack Query hooks, not by components directly
 │   │   ├── client.ts                # base fetch wrapper — attaches JWT, handles 401 → logout
-│   │   └── authApi.ts, clientsApi.ts, invoicesApi.ts, notificationsApi.ts, usersApi.ts, dashboardApi.ts
+│   │   └── authApi.ts, clientsApi.ts, invoicesApi.ts, notificationsApi.ts, usersApi.ts, dashboardApi.ts, businessApi.ts
 │   ├── types/                      # TS types mirroring backend DTOs
-│   │   └── invoice.ts, client.ts, notification.ts, auth.ts
+│   │   └── invoice.ts, client.ts, notification.ts, auth.ts, business.ts
 │   ├── schemas/                    # Zod validation schemas, one per form — same shape as the backend's FluentValidation validators
 │   │   └── invoiceSchema.ts, clientSchema.ts, authSchemas.ts
 │   ├── hooks/                      # TanStack Query hooks per resource
-│   │   └── useClients.ts (useClientsQuery, useCreateClientMutation, ...), useInvoices.ts, useNotifications.ts, useAuth.ts, useDashboard.ts
+│   │   └── useClients.ts (useClientsQuery, useCreateClientMutation, ...), useInvoices.ts, useNotifications.ts, useAuth.ts, useDashboard.ts, useBusiness.ts (useBusinessProfileQuery, useUpdatePaymentDetailsMutation — the mutation invalidates the `['business']` query key on success, the same invalidate-on-mutate pattern every other resource hook already follows)
 │   ├── context/
 │   │   └── AuthContext.tsx          # current user/business, login/logout, token storage
 │   ├── routes/                     # page-level components
@@ -381,10 +404,11 @@ frontend/
 │   │   ├── ClientsListPage.tsx, ClientDetailPage.tsx
 │   │   ├── InvoicesListPage.tsx, InvoiceDetailPage.tsx, InvoiceFormPage.tsx  # create/edit, edit only while Draft
 │   │   ├── NotificationsPage.tsx
-│   │   └── UsersPage.tsx            # Owner-only team management
+│   │   ├── UsersPage.tsx            # Owner-only team management
+│   │   └── SettingsPage.tsx         # business profile/payment-details settings — visible to all authenticated users, not role-filtered (unlike UsersPage)
 │   ├── components/
 │   │   ├── ui/                      # shadcn/ui primitives (Button, Table, Dialog, Badge, DropdownMenu, ...) — generated into the project and owned as source, not a node_modules dependency
-│   │   ├── layout/                  # AppShell (nav/header), ProtectedRoute
+│   │   ├── layout/                  # AppShell (nav/header), ProtectedRoute, Footer (new — simple support-contact line, "Need help? Contact support@..." with a `mailto:emiliochanderdutt9@gmail.com` link; rendered once at the root of `App.tsx`'s route tree rather than inside `AppShell`, so it shows on both the authenticated pages `AppShell` wraps (Dashboard/Clients/Invoices/Users/Notifications/Settings) and the standalone public auth pages (Login/Register/ForgotPassword/ResetPassword/ChangePassword) that currently render outside `AppShell` — never duplicated per-page)
 │   │   ├── invoices/                # InvoiceStatusBadge, InvoiceLineItemsEditor, InvoiceFilters
 │   │   ├── clients/                 # ClientForm
 │   │   └── common/                  # DataTable, Pagination, ConfirmDialog
@@ -397,6 +421,10 @@ frontend/
 ├── vite.config.ts
 └── Dockerfile
 ```
+
+**New route and nav entry for Settings:** `App.tsx` adds a `/settings` route, rendered inside `AppShell` like every other authenticated page, pointing at the new `SettingsPage.tsx`. `AppShell.tsx`'s `navItems` gains a corresponding "Settings" entry — unlike the "Users" entry, which `AppShell` filters out for non-Owner roles, the "Settings" entry is shown to every authenticated user regardless of role, matching the "any authenticated business member" access rule from `requirements.md`'s "Business payment details" section.
+
+**Footer:** `App.tsx` renders the new `Footer.tsx` (see `components/layout/` above) once, outside/beneath whichever route tree is active, so it appears under both the `AppShell`-wrapped authenticated routes and the standalone public auth routes without being added to either layout individually.
 
 **Auth transitions and the TanStack Query cache:** because multiple businesses' users can log into the same browser tab over time, `AuthContext.tsx`'s `logout()` — both the explicit user-initiated one and the automatic one triggered by `api/client.ts`'s `401` handler — and the completion of a new `login()` must call `queryClient.clear()` (before updating auth state on logout, after updating it on login) to wipe every cached query. Without this, a second business's user could briefly see the first business's cached invoices, clients, notifications, or dashboard summary rendered from stale cache before any refetch completes. This is a hard requirement, not an optimization: multi-tenant data must never persist across a user switch in the same browser tab.
 
@@ -458,6 +486,11 @@ Pure domain/application logic, no database, no network:
 - `ResendInvoiceEmailCommandHandler`: rejects a `Draft` invoice with no side effects; succeeds for `Unpaid`/`Overdue`/`Paid`/`Cancelled` without mutating invoice status; records a new `Notification` with a fresh `SourceEventId` each call
 - `ResendEmailSender`: builds a correct JSON request with base64-encoded attachments when present (against a fake `HttpMessageHandler`, no real Resend call)
 - `ChangePasswordCommandHandler`: resolves the caller via `ICurrentUserService` (never a client-supplied id), sets the new password without a current-password check, and clears `MustChangePassword` to `false` on success; `ChangePasswordCommandValidator` enforces the same shared `PasswordRules()` used by `RegisterCommandValidator`/`ResetPasswordCommandValidator`
+- `GetBusinessProfileQueryHandler` / `UpdatePaymentDetailsCommandHandler`: both resolve the business via `ICurrentUserService.BusinessId`; `UpdatePaymentDetailsCommandHandler` writes the submitted value (including setting it back to `null`) with no role check performed
+- `CreateInvoiceCommandHandler`: `PaymentDetails` is snapshotted from the business's current `Business.PaymentDetails` when the create request supplies no override; an explicit override in the request is used instead of the business default; the snapshotted/overridden value is unaffected by a later change to `Business.PaymentDetails`
+- `UpdateInvoiceCommandHandler`: accepts a change to `Invoice.PaymentDetails` while the invoice is `Draft`; rejects it (along with the rest of the update) once the invoice is no longer `Draft`, identical to the existing line-items/due-date/client lock
+- `QuestPdfInvoiceGenerator`: renders the "Payment Details" section when `Invoice.PaymentDetails` is non-empty; omits the section entirely (no empty heading) when it's null/empty
+- `InvoiceEmailContentBuilder`: `Build(...)` and `BuildOverdueReminder(...)` each include the payment-details line when `Invoice.PaymentDetails` is non-empty and omit it entirely when null/empty
 
 ### Backend integration tests (`InvoiceTracker.IntegrationTests` — xUnit, `WebApplicationFactory`, Testcontainers for Postgres)
 
@@ -477,6 +510,10 @@ Full HTTP pipeline, real database, real migrations:
 - Switch-business — succeeds and returns a token scoped to the new business/role for a membership the caller actually holds; `404` for a business id the caller's identity has no active membership in; a JWT issued for Business A is rejected (`404`, the existing cross-tenant rule) when used to call any Business-B-scoped endpoint, proving a switch requires a new token rather than letting one token silently span businesses
 - Register with an already-registered email — `409 Conflict`, no new Business/identity/membership created; "Add a business" (authenticated) for an existing identity succeeds and does not disturb its existing membership(s)
 - Deactivating a membership in one business does not affect the same identity's membership (or ability to log into) a different business
+- `GET /api/business` / `PUT /api/business/payment-details` — succeeds for both an Owner's and a Staff user's JWT (no `403` for either); Business A's JWT reading/updating Business B's payment details is unreachable (`404`, the same cross-tenant rule as every other resource) since the handler never takes a business id from the request; a value set via `PUT` is reflected by a subsequent `GET`
+- Invoice creation snapshots `PaymentDetails` from the business's current default at the moment of creation; changing the business default afterward does not change an already-created invoice's `PaymentDetails`; supplying an explicit `paymentDetails` value on the create request takes precedence over the business default
+- `PUT /api/invoices/{id}` can change `PaymentDetails` while the invoice is `Draft`; the same call is rejected once the invoice is `Unpaid`, consistent with the existing Draft-only edit lock
+- `GET /api/invoices/{id}/pdf` and the Send/Resend/overdue-reminder email content each include the payment-details line/section when the invoice's `PaymentDetails` is non-empty, and omit it entirely when null/empty
 
 ### Frontend tests (Vitest, React Testing Library, MSW)
 

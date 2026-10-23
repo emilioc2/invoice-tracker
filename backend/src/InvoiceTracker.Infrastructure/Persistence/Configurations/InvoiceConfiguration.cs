@@ -27,6 +27,7 @@ public class InvoiceConfiguration : IEntityTypeConfiguration<Invoice>
         builder.Property(i => i.Total).HasColumnType("numeric(18,2)");
 
         builder.Property(i => i.Notes).HasMaxLength(2000);
+        builder.Property(i => i.PaymentDetails).HasMaxLength(2000);
 
         builder.Property(i => i.CreatedAtDate).IsRequired();
         builder.Property(i => i.DueDate).IsRequired();

@@ -180,9 +180,16 @@ public class OverdueNotificationConsumer : BackgroundService
         // Letter-format subject/body (greeting, amount due, due date, closing) per requirements.md's
         // "Overdue reminder email content" — built from the event's own fields rather than a second
         // database round trip, since InvoiceOverdueEvent already carries everything the template
-        // needs. See InvoiceEmailContentBuilder.BuildOverdueReminder's doc comment.
+        // needs. PaymentDetails is the one exception: it isn't on the lightweight event, so it's
+        // fetched here with its own small query. See InvoiceEmailContentBuilder.BuildOverdueReminder's
+        // doc comment.
+        var paymentDetails = await dbContext.Invoices
+            .Where(i => i.Id == @event.InvoiceId && i.BusinessId == @event.BusinessId)
+            .Select(i => i.PaymentDetails)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var (subject, body) = InvoiceEmailContentBuilder.BuildOverdueReminder(
-            @event.InvoiceNumber, @event.ClientName, @event.TotalAmount, @event.DueDate);
+            @event.InvoiceNumber, @event.ClientName, @event.TotalAmount, @event.DueDate, paymentDetails);
 
         if (notification is null)
         {

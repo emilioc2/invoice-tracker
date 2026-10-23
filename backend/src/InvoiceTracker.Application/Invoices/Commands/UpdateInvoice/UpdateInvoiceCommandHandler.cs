@@ -64,6 +64,7 @@ public class UpdateInvoiceCommandHandler : IRequestHandler<UpdateInvoiceCommand,
         invoice.DueDate = request.DueDate;
         invoice.TaxRate = request.TaxRate;
         invoice.Notes = request.Notes;
+        invoice.PaymentDetails = request.PaymentDetails;
         invoice.Subtotal = subtotal;
         invoice.TaxAmount = taxAmount;
         invoice.Total = total;

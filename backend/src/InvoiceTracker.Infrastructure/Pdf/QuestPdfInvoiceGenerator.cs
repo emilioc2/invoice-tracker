@@ -139,6 +139,17 @@ public class QuestPdfInvoiceGenerator : IPdfGenerator
                     notesColumn.Item().Text(invoice.Notes);
                 });
             }
+
+            // Omitted entirely (heading included) when null/empty, rather than rendered empty —
+            // per architecture.md's "Business payment details" section.
+            if (!string.IsNullOrWhiteSpace(invoice.PaymentDetails))
+            {
+                column.Item().PaddingTop(25).Column(paymentDetailsColumn =>
+                {
+                    paymentDetailsColumn.Item().Text("Payment Details").FontSize(11).Bold();
+                    paymentDetailsColumn.Item().Text(invoice.PaymentDetails);
+                });
+            }
         });
     }
 

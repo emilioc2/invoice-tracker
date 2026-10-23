@@ -18,6 +18,7 @@ public static class InvoiceMappingExtensions
             invoice.TaxAmount,
             invoice.Total,
             invoice.Notes,
+            invoice.PaymentDetails,
             invoice.LastModifiedDate,
             invoice.ArchivedAt,
             invoice.LineItems.Select(li => li.ToDto()).ToList(),

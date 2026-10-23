@@ -64,7 +64,8 @@ public class InvoicesController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<InvoiceDto>> Create(CreateInvoiceRequest request, CancellationToken cancellationToken)
     {
-        var command = new CreateInvoiceCommand(request.ClientId, request.DueDate, request.TaxRate, request.Notes, request.LineItems);
+        var command = new CreateInvoiceCommand(
+            request.ClientId, request.DueDate, request.TaxRate, request.Notes, request.LineItems, request.PaymentDetails);
         var result = await _mediator.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
@@ -72,7 +73,8 @@ public class InvoicesController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<InvoiceDto>> Update(Guid id, UpdateInvoiceRequest request, CancellationToken cancellationToken)
     {
-        var command = new UpdateInvoiceCommand(id, request.ClientId, request.DueDate, request.TaxRate, request.Notes, request.LineItems);
+        var command = new UpdateInvoiceCommand(
+            id, request.ClientId, request.DueDate, request.TaxRate, request.Notes, request.LineItems, request.PaymentDetails);
         var result = await _mediator.Send(command, cancellationToken);
         return Ok(result);
     }
@@ -113,6 +115,8 @@ public class InvoicesController : ControllerBase
     }
 }
 
-public record CreateInvoiceRequest(Guid ClientId, DateTime DueDate, decimal TaxRate, string? Notes, List<InvoiceLineItemRequest> LineItems);
+public record CreateInvoiceRequest(
+    Guid ClientId, DateTime DueDate, decimal TaxRate, string? Notes, List<InvoiceLineItemRequest> LineItems, string? PaymentDetails = null);
 
-public record UpdateInvoiceRequest(Guid ClientId, DateTime DueDate, decimal TaxRate, string? Notes, List<InvoiceLineItemRequest> LineItems);
+public record UpdateInvoiceRequest(
+    Guid ClientId, DateTime DueDate, decimal TaxRate, string? Notes, List<InvoiceLineItemRequest> LineItems, string? PaymentDetails = null);

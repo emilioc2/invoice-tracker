@@ -24,8 +24,9 @@ public static class InvoiceEmailContentBuilder
             $"Dear {client.Name},\n\n" +
             $"Please find attached a copy of invoice {invoice.InvoiceNumber}.\n\n" +
             $"Amount due: {invoice.Total:F2}\n" +
-            $"Due date: {invoice.DueDate:yyyy-MM-dd}\n\n" +
-            "Thank you for your business.";
+            $"Due date: {invoice.DueDate:yyyy-MM-dd}\n" +
+            PaymentDetailsLine(invoice.PaymentDetails) +
+            "\nThank you for your business.";
 
         return (subject, body);
     }
@@ -44,10 +45,12 @@ public static class InvoiceEmailContentBuilder
     /// lightweight invoice/client summary, per architecture.md), so there is no need for it to issue
     /// a second database query just to re-fetch the same values as domain entities before calling
     /// this builder. The invoice PDF attachment is still sourced from the database, via
-    /// <c>IInvoicePdfService.GenerateAsync</c>, by the consumer itself.
+    /// <c>IInvoicePdfService.GenerateAsync</c>, by the consumer itself. <paramref name="paymentDetails"/>
+    /// is the one exception: it isn't on <c>InvoiceOverdueEvent</c> (the event stays lightweight, per
+    /// architecture.md), so the consumer fetches it with its own small query before calling this.
     /// </summary>
     public static (string Subject, string Body) BuildOverdueReminder(
-        string invoiceNumber, string clientName, decimal totalAmount, DateTime dueDate)
+        string invoiceNumber, string clientName, decimal totalAmount, DateTime dueDate, string? paymentDetails = null)
     {
         var subject = $"Invoice {invoiceNumber} is overdue";
 
@@ -55,10 +58,21 @@ public static class InvoiceEmailContentBuilder
             $"Dear {clientName},\n\n" +
             $"This is a reminder that invoice {invoiceNumber} is now overdue.\n\n" +
             $"Amount due: {totalAmount:F2}\n" +
-            $"Due date: {dueDate:yyyy-MM-dd}\n\n" +
-            "Please arrange payment as soon as possible. A copy of the invoice is attached for your reference.\n\n" +
+            $"Due date: {dueDate:yyyy-MM-dd}\n" +
+            PaymentDetailsLine(paymentDetails) +
+            "\nPlease arrange payment as soon as possible. A copy of the invoice is attached for your reference.\n\n" +
             "Thank you.";
 
         return (subject, body);
     }
+
+    /// <summary>
+    /// Shared helper for both templates above: a single "Payment details: ..." line, placed with
+    /// the other invoice details before the closing line, whenever <paramref name="paymentDetails"/>
+    /// is non-empty; an empty string (never adding anything) when it's null/empty, so the body stays
+    /// byte-for-byte what it was before this feature — see both callers' use of this inline between
+    /// the "Due date" line and the following blank-line/closing paragraph.
+    /// </summary>
+    private static string PaymentDetailsLine(string? paymentDetails) =>
+        string.IsNullOrWhiteSpace(paymentDetails) ? string.Empty : $"Payment details: {paymentDetails}\n";
 }
