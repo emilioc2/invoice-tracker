@@ -1,9 +1,12 @@
+using System.Threading.RateLimiting;
 using InvoiceTracker.Api.BackgroundServices;
 using InvoiceTracker.Api.Middleware;
 using InvoiceTracker.Api.Serialization;
+using InvoiceTracker.Api.Startup;
 using InvoiceTracker.Application;
 using InvoiceTracker.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -81,7 +84,47 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
+// Brute-force protection for the auth endpoints most worth throttling (login, register,
+// forgot/reset/change-password — see AuthController). Deliberately scoped to just those actions via
+// [EnableRateLimiting(...)] on each one, not applied API-wide. Fixed-window, partitioned per client
+// IP, so one caller hammering /api/auth/login can't exhaust another caller's quota. Limit/window are
+// configurable (RateLimiting:Auth:PermitLimit/WindowSeconds) so appsettings.Development.json — which
+// the integration test suite also runs under, see
+// IntegrationTestWebApplicationFactory.UseEnvironment("Development") — can set a much higher limit
+// than production without any test needing to know about rate limiting at all. The policy factory
+// below deliberately resolves IConfiguration from httpContext.RequestServices at request time
+// instead of capturing a value read from builder.Configuration up front: WebApplicationFactory-based
+// tests (see RateLimitingTests) append their own config override via WithWebHostBuilder, which is
+// only merged into the final IConfiguration at the point the host is built — reading eagerly here
+// would silently bake in the pre-override value instead.
+builder.Services.AddRateLimiter(options =>
+{
+    // Default is 503; a plain, un-queued 429 is the clean, expected rejection response here.
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy(RateLimiterPolicyNames.Auth, httpContext =>
+    {
+        var configuration = httpContext.RequestServices.GetRequiredService<IConfiguration>();
+        var permitLimit = configuration.GetValue<int?>("RateLimiting:Auth:PermitLimit") ?? 10;
+        var windowSeconds = configuration.GetValue<int?>("RateLimiting:Auth:WindowSeconds") ?? 60;
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit,
+                Window = TimeSpan.FromSeconds(windowSeconds),
+                QueueLimit = 0
+            });
+    });
+});
+
 var app = builder.Build();
+
+// Guards against an unset/placeholder JWT signing secret ever being used outside Development — see
+// JwtSecretGuard's own doc comment. Runs after configuration is built (app.Configuration reflects
+// every provider, including env var overrides) but before the app starts serving requests.
+JwtSecretGuard.EnsureConfigured(app.Environment.EnvironmentName, app.Configuration["Jwt:Secret"]);
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -92,12 +135,23 @@ if (app.Environment.IsDevelopment())
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+// Must come before UseHttpsRedirection, matching ASP.NET Core's documented HSTS ordering — HSTS tells
+// the browser to upgrade future requests to HTTPS itself, so it only makes sense outside Development
+// (where the dev cert isn't something a real browser trusts) and should be set before the redirect
+// middleware runs.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
 app.UseHttpsRedirection();
 
 app.UseCors(FrontendCorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseRateLimiter();
 
 app.MapControllers();
 

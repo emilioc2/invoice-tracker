@@ -1,3 +1,4 @@
+using InvoiceTracker.Api.Startup;
 using InvoiceTracker.Application.Auth.Commands.AddBusiness;
 using InvoiceTracker.Application.Auth.Commands.ChangePassword;
 using InvoiceTracker.Application.Auth.Commands.ForgotPassword;
@@ -11,6 +12,7 @@ using InvoiceTracker.Application.Auth.Queries.GetMyMemberships;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace InvoiceTracker.Api.Controllers;
 
@@ -44,6 +46,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("register")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimiterPolicyNames.Auth)]
     public async Task<ActionResult<AuthResultDto>> Register(RegisterRequest request, CancellationToken cancellationToken)
     {
         var command = new RegisterCommand(request.BusinessName, request.BusinessEmail, request.OwnerEmail, request.Password);
@@ -53,6 +56,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimiterPolicyNames.Auth)]
     public async Task<ActionResult<AuthResultDto>> Login(LoginRequest request, CancellationToken cancellationToken)
     {
         var command = new LoginCommand(request.Email, request.Password);
@@ -118,6 +122,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("forgot-password")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimiterPolicyNames.Auth)]
     public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request, CancellationToken cancellationToken)
     {
         var command = new ForgotPasswordCommand(request.Email);
@@ -129,6 +134,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("reset-password")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimiterPolicyNames.Auth)]
     public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken cancellationToken)
     {
         var command = new ResetPasswordCommand(request.Email, request.Token, request.NewPassword);
@@ -148,6 +154,7 @@ public class AuthController : ControllerBase
     /// </summary>
     [HttpPost("change-password")]
     [Authorize]
+    [EnableRateLimiting(RateLimiterPolicyNames.Auth)]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken cancellationToken)
     {
         var command = new ChangePasswordCommand(request.NewPassword);
