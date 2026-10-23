@@ -89,9 +89,6 @@ export function ForgotPasswordPage() {
         </form>
 
         <div className="flex flex-col items-center gap-1 text-sm text-muted-foreground">
-          <Link to="/reset-password" className="hover:text-foreground">
-            Already have a reset token?
-          </Link>
           <Link to="/login" className="hover:text-foreground">
             Back to log in
           </Link>

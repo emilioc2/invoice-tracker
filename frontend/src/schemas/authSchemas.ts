@@ -54,10 +54,10 @@ export const forgotPasswordSchema = z.object({
 });
 export type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
 
-// Mirrors `ResetPasswordCommandValidator`: Email, Token, NewPassword. Token/email are editable
-// manually (not just read from a URL) since no real reset email is wired up yet (step 3 used a
-// no-op IEmailSender for forgot/reset-password) — the only way to exercise this flow today is by
-// pulling the token straight out of the dev database.
+// Mirrors `ResetPasswordCommandValidator`: Email, Token, NewPassword. Email/token are always
+// populated from the `?email=&token=` query params on the emailed reset link (ResetPasswordPage
+// renders no form at all if either is missing) — never shown to or typed by the user, but still
+// part of the validated/submitted payload.
 export const resetPasswordSchema = z.object({
   email: emailSchema,
   token: z.string().min(1, "Reset token is required."),
