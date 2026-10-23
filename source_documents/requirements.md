@@ -13,7 +13,7 @@ Eternity Invoicing is a multi-tenant web application that allows businesses to m
 | Database | PostgreSQL |
 | Messaging | Kafka, **KRaft mode** (no separate Zookeeper container — lighter footprint) |
 | Frontend | React + TypeScript |
-| Email | Formspree, behind a generic `IEmailSender` interface (Application layer) so the concrete provider is a one-class swap later. `IEmailSender.SendAsync` accepts an optional list of attachments (filename + bytes + content-type) alongside the plain-text body, used by the invoice Send/Resend flow below to deliver the invoice PDF. **Known limitation to document:** Formspree forwards to a configured inbox rather than arbitrary third-party recipients, so in this implementation it proves the outbound integration (including attachment delivery) fires correctly on events, rather than guaranteeing delivery to each client's actual inbox. |
+| Email | Resend, behind a generic `IEmailSender` interface (Application layer) so the concrete provider is a one-class swap later. `IEmailSender.SendAsync` accepts an optional list of attachments (filename + bytes + content-type) alongside the plain-text body, used by the invoice Send/Resend flow below to deliver the invoice PDF. **Known limitation to document:** this implementation uses Resend's shared default sender address (no domain/DNS verification), which in sandbox mode can only deliver to the email address that owns the Resend account rather than to arbitrary third-party recipients — this is for testing purposes, so it proves the outbound integration (including attachment delivery) fires correctly on events, rather than guaranteeing delivery to each client's actual inbox. |
 | PDF export | QuestPDF for generating an invoice PDF on demand. (Its free Community license has company-size/revenue eligibility conditions — acceptable here as a personal project, called out for completeness alongside the other licensing/cost trade-offs in this table.) |
 | Frontend hosting | Vercel (live), using Vercel's own git integration for frontend CI/CD |
 | Backend/DB/Kafka hosting | Single AWS EC2 **t3.micro**, running the full `docker-compose` stack (API + Postgres + Kafka) live. 1GB RAM is tight for this combination — mitigations: KRaft mode Kafka, trimmed JVM heap settings, lightweight Postgres config, swap file configured on the instance. |
@@ -36,7 +36,7 @@ Eternity Invoicing is a multi-tenant web application that allows businesses to m
 ### Permissions
 Role is now a property of a `UserBusinessMembership`, not of a person's identity — the same identity can be Owner of one business and Staff of another, each independently.
 - **Owner**: full CRUD on clients/invoices in that business + can create, deactivate, and reactivate other memberships for that business. Exactly one Owner membership exists per business (the person who registered it, or who later used "Add a business" — see "Multi-business membership" below) — a business's Owner membership cannot be duplicated, and **an Owner can never deactivate their own membership in that business**, so a given business can never end up with no one able to manage its users. This invariant is per-business: it does not restrict how many *different* businesses the same identity may be Owner of at once.
-- **Staff**: full CRUD on clients/invoices in that business, no user management. Deactivating a Staff membership only affects that person's access to that one business — any other membership they hold elsewhere is untouched.
+- **Staff**: full CRUD on clients/invoices in that business, no user management. This includes the Users screen itself — the frontend hides the Users nav tab and page from Staff entirely, though `GET /api/users` remains callable by any authenticated user at the API layer (unchanged). Deactivating a Staff membership only affects that person's access to that one business — any other membership they hold elsewhere is untouched.
 
 ### Multi-user onboarding
 First registration creates the Business + its Owner user. Owner adds Staff users directly from the UI (email + auto-generated temp password, emailed via the `IEmailSender` abstraction) — no separate invite-token flow.
@@ -48,7 +48,7 @@ A Staff user created via the Multi-user onboarding flow above receives an auto-g
 - The identity's `MustChangePassword` flag is set `true` at the moment a Staff user's temp password is created (alongside the existing temp-password email), and cleared to `false` only on that user's next successful password change via the flow described here.
 - On login, the API reports `MustChangePassword` back to the caller alongside the existing login response; the SPA must redirect to a forced change-password screen and block navigation to anything else in the app until the change succeeds — the user keeps the JWT already issued (it remains valid and usable to perform the change) but cannot reach clients, invoices, or any other screen while the flag is still `true`.
 - The forced change happens **mid-session, with the user's current (temp) password known to them** — this is a different situation from "I forgot my password entirely," which the existing self-service forgot-password/reset-password flow (reset token via email) already covers. The two flows are independent and neither replaces the other: forgot-password/reset-password is unaffected by this feature.
-- Completing the forced change requires the user to supply their current password (the temp password) and a new password meeting the same password-strength rules as every other password set in the system; on success, `MustChangePassword` clears to `false` and the user has normal access from then on, with no new login required.
+- Completing the forced change requires only a new password meeting the same password-strength rules as every other password set in the system — the user does not need to re-supply their current (temp) password, since already holding a valid JWT issued at the moment they logged in with it is proof enough; on success, `MustChangePassword` clears to `false` and the user has normal access from then on, with no new login required.
 - This flow applies only to Staff users created with a temp password. A newly-registered Owner chooses their own password at registration, so `MustChangePassword` is always `false` for a freshly registered Owner.
 
 ## Multi-business membership
@@ -81,10 +81,11 @@ Because email delivery isn't guaranteed, a business can **resend** the same invo
 - Business + Owner registration/login; Owner-created, Owner-deactivated, and Owner-reactivated Staff memberships (an Owner can never deactivate their own membership in that business); JWT auth, scoped to one active business per token; a business-selector screen at login when one identity's credentials match more than one active membership, and an explicit switch-business action afterward — see "Multi-business membership"; self-service forgot-password/reset flow; forced password-change flow for temp-password logins (distinct from the self-service flow, mid-session with a known current password)
 - Client CRUD (soft-delete via `ClientStatus.Removed`, not hard delete)
 - Invoice CRUD with line items (archive via `ArchivedAt`, not hard delete), full status workflow above
-- Kafka-driven overdue pipeline: background job flags overdue invoices → publishes event → consumer "sends" via Formspree + persists a `Notification`
+- Kafka-driven overdue pipeline: background job flags overdue invoices → publishes event → consumer "sends" via Resend + persists a `Notification`
 - Invoice email delivery on Send (PDF attachment + invoice details in body), with a manual Resend capability for any invoice past `Draft`; delivery outcome (`Sent`/`Failed`) tracked per attempt via `Notification` records and reported separately from the Send/Resend action's own (always-independent) success
 - Notifications list view
 - Invoice list with filtering (status, client, date range) + dashboard summary (outstanding total, overdue count, etc.)
+- Responsive mobile support — a single breakpoint (~768px): below it, a collapsible hamburger/drawer navigation replaces the desktop header nav, and list views (Clients/Invoices/Users/Notifications) render as cards instead of tables; forms and dialogs get touch-target sizing (44×44px minimum). Tablet-width screens inherit the unchanged desktop layout — no dedicated intermediate tablet treatment.
 - PDF export of an invoice
 - Swagger/OpenAPI docs
 - Full `docker-compose` stack (API, Postgres, Kafka in KRaft mode) — this is both the local dev environment and what's deployed live to the EC2 instance
@@ -92,7 +93,7 @@ Because email delivery isn't guaranteed, a business can **resend** the same invo
 - Kubernetes manifests as artifacts (not live)
 - GitHub Actions CI for backend; Vercel's own pipeline for frontend
 - Automated tests: backend unit tests (status transitions, overdue calculation, totals), backend integration tests (API against a real Postgres), a handful of frontend component tests
-- README: run/build/test instructions, architecture overview, and a design decisions & trade-offs section (Formspree limitation, AWS t3.micro RAM trade-off, why K8s manifests aren't live, etc.)
+- README: run/build/test instructions, architecture overview, and a design decisions & trade-offs section (Resend sandbox-mode delivery limitation, AWS t3.micro RAM trade-off, why K8s manifests aren't live, etc.)
 
 ## Out of scope
 

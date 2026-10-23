@@ -48,11 +48,11 @@ backend/
 │   │   │   └── Queries/ListUsers/
 │   │   └── Auth/
 │   │       └── Commands/ Register/, Login/, SelectBusiness/, SwitchBusiness/, AddBusiness/, ForgotPassword/, ResetPassword/
-│   ├── InvoiceTracker.Infrastructure/        # EF Core, Identity, Kafka, Formspree, QuestPDF — the adapters
+│   ├── InvoiceTracker.Infrastructure/        # EF Core, Identity, Kafka, Resend, QuestPDF — the adapters
 │   │   ├── Persistence/                    # ApplicationDbContext, EF entity configs, Migrations
 │   │   ├── Identity/                       # ASP.NET Core Identity wiring, JWT token generation
 │   │   ├── Messaging/                      # KafkaEventPublisher, OverdueNotificationConsumer (hosted service)
-│   │   ├── Email/                          # FormspreeEmailSender : IEmailSender (multipart/form-data upload for attachments), NoOpEmailSender : IEmailSender (logs attachment filename/size)
+│   │   ├── Email/                          # ResendEmailSender : IEmailSender (JSON POST with base64-encoded attachments, not multipart/form-data), NoOpEmailSender : IEmailSender (logs attachment filename/size) — ResendEmailSender is used when a real Resend API key is configured (any environment); NoOpEmailSender is the fallback otherwise, including Development without a key configured
 │   │   └── Pdf/                            # QuestPdfInvoiceGenerator : IPdfGenerator
 │   └── InvoiceTracker.Api/                  # Controllers, composition root, Program.cs
 │       ├── Controllers/                    # AuthController, UsersController, ClientsController, InvoicesController, NotificationsController, DashboardController
@@ -148,7 +148,7 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 | GET | `/api/auth/memberships` | Requires a valid JWT. Returns the caller's own active memberships (`businessId`, `businessName`, `role`) — lets the frontend's business switcher do a real lazy fetch on open, rather than relying only on whatever `memberships` list a prior multi-membership login happened to return in this session |
 | POST | `/api/auth/forgot-password` | Triggers reset email via `IEmailSender` |
 | POST | `/api/auth/reset-password` | Consumes the reset token, sets new password |
-| POST | `/api/auth/change-password` | Requires a valid JWT. Takes `{ currentPassword, newPassword }`; clears `MustChangePassword` on the caller's identity (not any one membership — see "Multi-business membership"). See "Forced password change" below |
+| POST | `/api/auth/change-password` | Requires a valid JWT. Takes `{ newPassword }` — no `currentPassword` required, since the caller already holds a valid JWT issued at the moment they authenticated with the temp password; clears `MustChangePassword` on the caller's identity (not any one membership — see "Multi-business membership"). See "Forced password change" below |
 
 **JWT claims, worked example:** a token issued for a person who is Owner of Business A and also Staff of Business B always carries exactly one `businessId` + one `role` claim — whichever business the token was issued for:
 ```json
@@ -162,7 +162,7 @@ All routes require a JWT bearer token except `register`, `login`, `forgot-passwo
 ### Users (team management — Owner only except where noted)
 | Method | Route | Notes |
 |---|---|---|
-| GET | `/api/users` | List users in the caller's business — any authenticated user |
+| GET | `/api/users` | List users in the caller's business — any authenticated user (the frontend hides the Users nav tab/page from non-Owners, but this endpoint itself stays open to any authenticated user — a deliberate UI-only restriction, not a backend one) |
 | POST | `/api/users` | Owner creates a Staff user (emails a temp password) |
 | DELETE | `/api/users/{id}` | Owner deactivates a Staff user — calls `User.TransitionTo(UserStatus.Deactivated)`, blocking future logins. An Owner cannot deactivate their own account — rejected with `400`. Note: this does not revoke a JWT already issued to the deactivated user — see `requirements.md`'s Auth row for this accepted limitation |
 | POST | `/api/users/{id}/reactivate` | Owner reactivates a previously deactivated Staff user — calls `User.TransitionTo(UserStatus.Active)`, restoring their ability to log in |
@@ -265,7 +265,7 @@ Subscribed to `invoice-overdue`. For each message:
    - **Exists with `Status = Sent`:** already fully processed — log and skip (this is what handles Kafka's ordinary at-least-once redelivery after a successful run).
    - **Exists with `Status = Pending`:** a previous attempt crashed between recording and sending — proceed to step 3 using the existing row.
    - **Doesn't exist:** insert a new `Notification` row with `Status = Pending` (`InvoiceId`, `Channel = "Email"`, `Message`, `SourceEventId` = the event's `eventId`) *before* attempting to send.
-3. Call `IEmailSender.SendAsync(...)` (the `FormspreeEmailSender` adapter). On success, update the row to `Status = Sent`, `SentAt = now`. On failure, update to `Status = Failed` (visible in the Notifications list; not automatically retried beyond Kafka's own redelivery of the underlying event).
+3. Call `IEmailSender.SendAsync(...)` (the `ResendEmailSender` adapter). On success, update the row to `Status = Sent`, `SentAt = now`. On failure, update to `Status = Failed` (visible in the Notifications list; not automatically retried beyond Kafka's own redelivery of the underlying event).
 
 Because the `Pending` row is written *before* the send is attempted, a crash can only ever leave a `Pending` row behind to retry — it can never produce a second `Sent` row for the same `SourceEventId`.
 
@@ -286,7 +286,7 @@ public interface IEmailSender
 
 public record EmailAttachment(string FileName, byte[] Content, string ContentType);
 ```
-Existing callers with no attachment (`ForgotPasswordCommandHandler`, `CreateStaffUserCommandHandler`) pass `Array.Empty<EmailAttachment>()`. `FormspreeEmailSender` must switch from a plain JSON POST to `multipart/form-data` to actually upload the file(s); `NoOpEmailSender` logs each attachment's filename and byte count instead of sending; any test double implementing `IEmailSender` needs the new parameter.
+Existing callers with no attachment (`ForgotPasswordCommandHandler`, `CreateStaffUserCommandHandler`) pass `Array.Empty<EmailAttachment>()`. `ResendEmailSender` sends attachments as base64-encoded content in the same JSON payload as the rest of the message — simpler than a multipart upload; `NoOpEmailSender` logs each attachment's filename and byte count instead of sending; any test double implementing `IEmailSender` needs the new parameter.
 
 **`IInvoicePdfService` (new, Application-layer):**
 ```csharp
@@ -337,9 +337,9 @@ public record AuthResultDto(
 ```
 Returned by `POST /api/auth/login`. `RegisterCommandHandler` returns the same `AuthResultDto` shape (`register` creates the Owner and logs them in immediately) — `MustChangePassword` is always `false` there, since a newly-registered Owner chooses their own password at registration and never has a temp password.
 
-**`ChangePasswordCommandHandler` (new, `Auth/Commands/ChangePassword/`):** takes `{ currentPassword, newPassword }` from the authenticated caller (`ICurrentUserService` resolves the user, never a client-supplied id).
-1. Load the current user, verify `currentPassword` against the Identity password hash (e.g. `UserManager.CheckPasswordAsync`). Wrong password → reject with `400`, no state changes.
-2. `UserManager.ChangePasswordAsync(user, currentPassword, newPassword)`.
+**`ChangePasswordCommandHandler` (new, `Auth/Commands/ChangePassword/`):** takes only `{ newPassword }` from the authenticated caller (`ICurrentUserService` resolves the user, never a client-supplied id) — no `currentPassword` field, and no verification step against it. The caller already holds a valid JWT issued at the moment they authenticated with the temp password moments earlier, which is proof enough for this mid-session change; re-verifying the password they just logged in with adds no additional security.
+1. Load the current user via `ICurrentUserService`.
+2. Set the new password directly, without needing or verifying the old one: `UserManager.RemovePasswordAsync(user)` followed by `UserManager.AddPasswordAsync(user, newPassword)` (rather than `UserManager.ChangePasswordAsync`, which requires the old password).
 3. On success, set `MustChangePassword = false`, save.
 
 `ChangePasswordCommandValidator` applies the same shared `RuleBuilderExtensions.PasswordRules()` extension already used by `RegisterCommandValidator` and `ResetPasswordCommandValidator` (per this document's "shared rules across validators" convention above) — the password-strength policy is not re-implemented a third time.
@@ -393,6 +393,8 @@ frontend/
 
 **Forced password-change route guard:** when `login()` resolves with `mustChangePassword: true`, `AuthContext.tsx` routes the SPA to a new `ChangePasswordPage.tsx` and keeps it there — the inverse of the existing `ProtectedRoute` (`components/layout/ProtectedRoute.tsx`), which keeps unauthenticated users *out* of the app; this guard keeps an authenticated-but-not-yet-compliant user *out of everything else*, until the `POST /api/auth/change-password` call succeeds and clears the flag in client state, at which point normal routing resumes with no new login required.
 
+**Mobile responsiveness:** the frontend supports exactly one responsive breakpoint, ~768px — below it, a mobile treatment applies; at and above it, the existing desktop layout is unchanged, with no dedicated intermediate tablet layout (tablet-width screens inherit the desktop layout as-is). `AppShell.tsx` collapses its header nav into a hamburger/drawer menu below the breakpoint, in place of the unconditional horizontal nav row it renders today. `DataTable.tsx` renders a card-per-row layout below the breakpoint instead of its current table layout; because `DataTable` is generic over column config, this isn't automatic from the existing column config alone — each calling page (`ClientsListPage`, `InvoicesListPage`, `UsersPage`, `NotificationsPage`) must additionally specify which fields surface in its card view. Forms and dialogs (`ClientForm`, the invoice line-item editor, `AddBusinessForm`, and other dialog-based forms) get a pass for input sizing and touch-target spacing (44×44px minimum) as part of the same effort, not deferred to a later one.
+
 **Data-fetching pattern** — one hook file per resource wraps the matching `api/*.ts` functions in TanStack Query:
 
 ```ts
@@ -443,13 +445,13 @@ Pure domain/application logic, no database, no network:
 - Kafka pipeline components tested in isolation: `OverdueInvoiceScannerService`, `OutboxRelayService`, and `OverdueNotificationConsumer` each get unit tests against a mocked `IEventPublisher`/`IEmailSender` — no real Kafka broker in the test suite. For the consumer specifically: a case where no `Notification` exists (inserts `Pending`, sends, updates to `Sent`), a case where one exists as `Sent` (skips, never calls `IEmailSender`), and a case where one exists as `Pending` (retries the send using the existing row) — this last case is what proves the crash-safety design actually holds. End-to-end confidence that the full chain works together comes from manual verification against the real `docker-compose` stack, not an automated test.
 - `SendInvoiceCommandHandler`: status transition still succeeds and persists when `IEmailSender` throws/returns failure; `Notification` recorded as `Sent` on success and `Failed` on failure, in both cases `NotificationType = InvoiceSent`
 - `ResendInvoiceEmailCommandHandler`: rejects a `Draft` invoice with no side effects; succeeds for `Unpaid`/`Overdue`/`Paid`/`Cancelled` without mutating invoice status; records a new `Notification` with a fresh `SourceEventId` each call
-- `FormspreeEmailSender`: builds a correct `multipart/form-data` request when attachments are present (against a fake `HttpMessageHandler`, no real Formspree call)
-- `ChangePasswordCommandHandler`: rejects a wrong `currentPassword` with no state change; succeeds and clears `MustChangePassword` to `false` on a correct `currentPassword` + valid `newPassword`; `ChangePasswordCommandValidator` enforces the same shared `PasswordRules()` used by `RegisterCommandValidator`/`ResetPasswordCommandValidator`
+- `ResendEmailSender`: builds a correct JSON request with base64-encoded attachments when present (against a fake `HttpMessageHandler`, no real Resend call)
+- `ChangePasswordCommandHandler`: resolves the caller via `ICurrentUserService` (never a client-supplied id), sets the new password without a current-password check, and clears `MustChangePassword` to `false` on success; `ChangePasswordCommandValidator` enforces the same shared `PasswordRules()` used by `RegisterCommandValidator`/`ResetPasswordCommandValidator`
 
 ### Backend integration tests (`InvoiceTracker.IntegrationTests` — xUnit, `WebApplicationFactory`, Testcontainers for Postgres)
 
 Full HTTP pipeline, real database, real migrations:
-- Auth — register creates Business+Owner; login succeeds/fails correctly; forgot/reset-password round trip (with a fake `IEmailSender` registered for tests, never a real Formspree call)
+- Auth — register creates Business+Owner; login succeeds/fails correctly; forgot/reset-password round trip (with a fake `IEmailSender` registered for tests, never a real Resend call)
 - Multi-tenancy isolation — Business A creates a client, an invoice, and (indirectly, via an overdue invoice) a notification; Business B's JWT requests each of the three → `404`, proving the BusinessId-scoping rule holds at the HTTP layer for all three resources, not just one
 - Client & Invoice CRUD — including the Draft-only edit lock, and that removing a Client (`Status → Removed`) or archiving an Invoice (`ArchivedAt`) each hides the record from the default list without deleting it
 - Invoice numbering concurrency — fire concurrent create-invoice requests for the same business, assert no duplicate numbers (proves the row-locking counter approach under contention)
@@ -459,7 +461,7 @@ Full HTTP pipeline, real database, real migrations:
 - `POST /api/invoices/{id}/send` response includes `EmailDelivery.Status`; invoice transitions to `Unpaid` even when the test's fake `IEmailSender` is configured to fail
 - `POST /api/invoices/{id}/resend-email` → `400` for a `Draft` invoice, `200` + new `Notification` row for a non-`Draft` one
 - `GET /api/notifications` list DTO includes `NotificationType` and distinguishes `OverdueReminder` from `InvoiceSent` rows
-- Forced password change — `POST /api/auth/login` response's `MustChangePassword` is `true` immediately after a Staff user is created via `CreateStaffUser` (temp password), and `false` for a freshly registered Owner; `POST /api/auth/change-password` requires a valid JWT (`401` without one); end-to-end, a Staff user created via `CreateStaffUser` logs in with the temp password, calls `change-password` with it as `currentPassword`, succeeds, and a subsequent login shows `MustChangePassword: false`
+- Forced password change — `POST /api/auth/login` response's `MustChangePassword` is `true` immediately after a Staff user is created via `CreateStaffUser` (temp password), and `false` for a freshly registered Owner; `POST /api/auth/change-password` requires a valid JWT (`401` without one); end-to-end, a Staff user created via `CreateStaffUser` logs in with the temp password, calls `change-password` with just `{ newPassword }`, succeeds, and a subsequent login shows `MustChangePassword: false`
 - Multi-business login — an identity with exactly one active membership logs in exactly as before (unchanged response shape); an identity with two active memberships (one Owner, one Staff, in different businesses) gets `requiresBusinessSelection: true` with both listed; `select-business` with a valid `preAuthToken` + a business the identity belongs to succeeds; `select-business` with a business id the identity does *not* belong to is rejected even with a structurally valid `preAuthToken`
 - Switch-business — succeeds and returns a token scoped to the new business/role for a membership the caller actually holds; `404` for a business id the caller's identity has no active membership in; a JWT issued for Business A is rejected (`404`, the existing cross-tenant rule) when used to call any Business-B-scoped endpoint, proving a switch requires a new token rather than letting one token silently span businesses
 - Register with an already-registered email — `409 Conflict`, no new Business/identity/membership created; "Add a business" (authenticated) for an existing identity succeeds and does not disturb its existing membership(s)
@@ -487,7 +489,7 @@ The actual `README.md`, written once implementation starts, will cover:
 8. Database migrations — how they're applied (auto-applied on container startup, or manual `dotnet ef database update`)
 9. Deployment — Vercel's git-integration for the frontend; GitHub Actions building/pushing the API image to GHCR, then how it's rolled out on the EC2 instance; note on the Kubernetes manifests being present but not live
 10. CI/CD — what the GitHub Actions pipeline actually runs
-11. **Design decisions & trade-offs** — the most important section: clean architecture + CQRS/MediatR, JWT+Identity over cookie auth, transactional outbox for Kafka publishing, KRaft mode Kafka, the Formspree delivery limitation, the `t3.micro` RAM trade-off and mitigations, why K8s manifests aren't live, Draft-only invoice editing, centralized status transitions (`TransitionTo`) applied consistently across Invoice/Client/User, soft-delete via `Status`/`ArchivedAt` over hard delete, per-business invoice numbering under concurrency, idempotent Kafka consumption via `SourceEventId`
+11. **Design decisions & trade-offs** — the most important section: clean architecture + CQRS/MediatR, JWT+Identity over cookie auth, transactional outbox for Kafka publishing, KRaft mode Kafka, the Resend sandbox-mode delivery limitation, the `t3.micro` RAM trade-off and mitigations, why K8s manifests aren't live, Draft-only invoice editing, centralized status transitions (`TransitionTo`) applied consistently across Invoice/Client/User, soft-delete via `Status`/`ArchivedAt` over hard delete, per-business invoice numbering under concurrency, idempotent Kafka consumption via `SourceEventId`
 12. Known limitations / possible future work — ties back to `requirements.md`'s out-of-scope list
 13. Folder structure overview (brief, linking back to this document)
 
@@ -500,7 +502,7 @@ A sequence that gets something runnable early and layers on from there:
 3. **Auth** — Identity + JWT issuance, register/login, `ICurrentUserService` + BusinessId scoping, forgot/reset password (with a no-op `IEmailSender` for now)
 4. **Core CRUD** — Clients and Invoices (incl. line items, per-business invoice numbering, status-transition endpoints, archive)
 5. **Team management** — Owner-only Staff user creation/listing/deactivation/reactivation
-6. **Kafka pipeline** — `OutboxMessage` + migration, scanner, relay, Kafka topic, consumer, `FormspreeEmailSender`, Notifications endpoint
+6. **Kafka pipeline** — `OutboxMessage` + migration, scanner, relay, Kafka topic, consumer, `ResendEmailSender`, Notifications endpoint
 7. **PDF export** — QuestPDF invoice template + endpoint
 8. **Dashboard summary endpoint**
 9. **Backend tests** — unit (domain rules, handlers, validators, Kafka components mocked) then integration (Testcontainers Postgres, full HTTP flows)
