@@ -105,7 +105,7 @@ export function NotificationsPage() {
       <div>
         <h1 className="font-display text-2xl font-semibold">Notifications</h1>
         <p className="text-sm text-muted-foreground">
-          Audit log of overdue-invoice email notifications sent by the system.
+          Audit log of invoice email notifications sent by the system — both automatic overdue reminders and manual sends.
         </p>
       </div>
 

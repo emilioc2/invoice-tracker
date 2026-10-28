@@ -50,8 +50,17 @@ public class ListNotificationsQueryHandler : IRequestHandler<ListNotificationsQu
         // only set once a send is attempted, so most-recently-sent-first, with Id as a stable
         // tie-break for rows that share a SentAt (or are both still null), is the closest
         // approximation of "most recent first" available from the existing shape.
+        //
+        // The leading OrderBy(x => x.Notification.SentAt == null) sorts false (0) before true (1),
+        // i.e. rows with a real SentAt before null-SentAt rows. This is deliberate and
+        // PostgreSQL-specific: ORDER BY ... DESC on a nullable column defaults to NULLS FIRST, so a
+        // plain OrderByDescending(SentAt) would put every still-Pending/Failed row (SentAt = null)
+        // ahead of every successfully-sent row regardless of how long ago it was sent. Without this
+        // null-last guard first, the Notifications page would make recent successful sends look
+        // missing, pushed down by unrelated failed/pending rows.
         var page = await query
-            .OrderByDescending(x => x.Notification.SentAt)
+            .OrderBy(x => x.Notification.SentAt == null)
+            .ThenByDescending(x => x.Notification.SentAt)
             .ThenByDescending(x => x.Notification.Id)
             .Skip((request.PageNumber - 1) * request.PageSize)
             .Take(request.PageSize)
