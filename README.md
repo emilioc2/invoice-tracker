@@ -51,6 +51,7 @@ The API is a layered Clean Architecture project (`Domain` → `Application` → 
 ### Prerequisites
 
 - .NET 10 SDK
+- The EF Core CLI tool: `dotnet tool install --global dotnet-ef`, and make sure `~/.dotnet/tools` is on your `PATH` — without this, `dotnet ef` (used throughout [Database migrations](#database-migrations)) fails with "Could not execute because the specified command or file was not found," not an obviously-migrations-related error.
 - Node.js 26+
 - Docker (for the full `docker-compose` stack, and for backend integration tests, which use Testcontainers)
 
@@ -203,6 +204,28 @@ Two options, from least to most invasive:
   ```
   The next scanner tick (≤15 min by default) will pick it up. Combine with the next option to not wait even that long.
 - **Lower the intervals for a test run** — override `Kafka__OverdueScanIntervalMinutes` (try `1`) and `Kafka__OutboxRelayIntervalSeconds` (try `5`) as environment variables (or edit `appsettings.Development.json` directly, but don't commit that change) before starting the API.
+
+### Retrieving a new staff user's temp password
+
+Adding a Staff user (`Users` page → `Add Staff`) for an email that has **no existing account** creates a brand-new identity with a system-generated temporary password, emailed to them with a forced change on first login. The same Resend sandbox restriction above applies here too — delivery only succeeds for the Resend account's own email address, so testing this with any other address needs another way to read the password.
+
+**Locally, this is easy** — `NoOpEmailSender` logs the full email, temp password included:
+
+```bash
+# Docker route
+docker compose logs api | grep "Temporary password"
+
+# Native dev-loop route: same text in the `dotnet run` console
+```
+
+Look for:
+```
+[NoOpEmailSender] Would send to {email} | Subject: Your Eternity Invoicing account | Body: An account has been created for you. Temporary password: {password}. ...
+```
+
+**On the live deployment, there is no equivalent — the temp password genuinely cannot be recovered after the fact for any address other than the Resend account's own.** Unlike invoice emails, a staff-invite email has no `Notification` row at all (it isn't invoice-related, so it's outside that audit trail), and the plaintext password is never logged or persisted anywhere — it exists only in memory for the single request that generates it, used immediately to hash the stored credential and attempt the send. If that send fails (the sandbox rejecting the recipient), the password is gone; the API logs only capture the failure itself (`Failed to send new-account email to {email}...`), never the password. The only way to see a real temp password on the live deployment is to invite the Resend account's own address, where delivery actually succeeds and the real inbox receives it.
+
+If the invited email **already has an account** (in this business or another — the same login can belong to more than one business, see the Auth bullet under [Manually testing a local run](#manually-testing-a-local-run)), no new password is generated at all: a membership is attached to that existing identity, and the invite email just says to log in with the existing password.
 
 ## API documentation
 
