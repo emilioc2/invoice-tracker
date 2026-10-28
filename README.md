@@ -43,7 +43,7 @@ The API is a layered Clean Architecture project (`Domain` → `Application` → 
 
 - **Frontend:** https://invoice-tracker-frontend-sigma.vercel.app
 - **Backend API:** https://13-53-216-75.nip.io (an EC2 instance's public IP via a free [nip.io](https://nip.io) hostname + Let's Encrypt cert — see [Deployment](#deployment) below for why)
-- Swagger/OpenAPI is **not** exposed on the live deployment (see [API documentation](#api-documentation)) — run the API locally to browse it interactively.
+- Swagger/OpenAPI is **not** exposed on the live deployment (see [API documentation](#api-documentation)) — the raw spec is available when running the API locally.
 - Kubernetes manifests exist as artifacts only (`k8s/`) — there is no live cluster; see [Design decisions & trade-offs](#design-decisions--trade-offs).
 
 ## Local development
@@ -113,9 +113,102 @@ cd frontend
 npm test
 ```
 
+## Manually testing a local run
+
+Beyond the automated suites above, here's a checklist for exercising the actual running app end-to-end (either [Option A or B](#local-development)):
+
+- **Auth** — register a business (creates its Owner user), log out/in, confirm a bad password is rejected. Add a Staff user, log in as them, confirm Staff can't reach Owner-only actions (e.g. deactivating a user). Confirm the Owner account can't deactivate itself. Confirm the same login can belong to more than one business (switch between them if the UI exposes that).
+- **Clients** — create, edit, remove (soft delete — confirm it disappears from the default list but the invoices referencing it are unaffected) a client.
+- **Invoices** — create a Draft invoice with multiple line items, edit it while still Draft, then confirm the whole invoice (line items, due date, client, notes — everything) becomes locked once it's sent (`Draft → Unpaid`); the edit endpoint rejects any update outright once status isn't `Draft`, not just those few fields. Confirm invoice numbers are sequential per business (`INV-0001`, `INV-0002`, …) and that a second business's numbering starts independently at `INV-0001` too.
+- **Status workflow** — walk an invoice through `Draft → Unpaid → Paid` and separately `Draft → Unpaid → Cancelled`; confirm `Cancelled` is rejected once an invoice is already `Overdue` or `Paid`, and confirm `Overdue` only ever happens automatically (via the background scan below), never as a manual action.
+- **PDF** — download an invoice's PDF (`GET /api/invoices/{id}/pdf`) and confirm it renders the correct line items/totals.
+- **Multi-tenancy** — log in as a user from Business A, grab an invoice/client id from Business B (e.g. via its own session), and confirm requesting it returns `404`, not `403` or the actual data.
+- **Dashboard** — confirm the summary numbers (outstanding total, overdue count, status breakdown) match what you'd expect from the invoices you've created.
+- **Email-triggering actions** — see the next section; this is the part worth checking deliberately rather than glancing past.
+
+## Confirming emails are actually sent
+
+There are two independent email-sending paths, and three ways to verify either of them actually fired — without ever needing to print or expose the real Resend API key.
+
+### The two paths
+
+| Trigger | Flow |
+|---|---|
+| Manual — `POST /api/invoices/{id}/send` or `POST /api/invoices/{id}/resend-email` | Handler calls `IEmailSender.SendAsync` directly within the request; the response body's `emailDelivery.status` already tells you `Sent` or `Failed` with no further digging needed. |
+| Automatic overdue reminder | `OverdueInvoiceScannerService` (every `Kafka:OverdueScanIntervalMinutes`, default 15 min) flags `Unpaid` invoices past their due date and writes an outbox row → `OutboxRelayService` (every `Kafka:OutboxRelayIntervalSeconds`, default 15s) publishes it to the `invoice-overdue` Kafka topic → `OverdueNotificationConsumer` (a separate background service) consumes it and calls `IEmailSender.SendAsync`. |
+
+### Local default: no real email is sent unless you configure a Resend key
+
+Out of the box (`Resend:ApiKey` left as the placeholder empty string in `appsettings.Development.json`), `Infrastructure/DependencyInjection.cs` falls back to `NoOpEmailSender`, which **doesn't actually call Resend** — it only logs what it would have sent. This is deliberate (see [Design decisions & trade-offs](#design-decisions--trade-offs)) and is enough to prove the whole pipeline fires correctly end-to-end. To exercise a *real* send:
+
+```bash
+cd backend/src/InvoiceTracker.Api
+dotnet user-secrets set "Resend:ApiKey" "<your real Resend API key>"
+```
+
+(or `Resend__ApiKey` as an environment variable if running via Docker/`docker compose`). Remember Resend's sandbox mode only delivers to the email address that owns the Resend account, not arbitrary client addresses — see the known limitation already called out above.
+
+### 1. Logs — the fastest check, works with or without a real key
+
+```bash
+# Docker route
+docker compose logs -f api
+
+# Native dev-loop route: just watch the `dotnet run` console directly
+```
+
+Look for one of these lines, matching whichever sender is actually registered:
+
+- `[NoOpEmailSender] Would send to {To} | Subject: {Subject} | Body: {Body}` (plus a `[NoOpEmailSender] Would attach {FileName} ({ByteCount} bytes)` line per attachment) — confirms the pipeline reached the send step, no real API key configured.
+- `[ResendEmailSender] Sent to {To} | Subject: {Subject} | Attachments: {AttachmentCount}` — confirms a real Resend call succeeded.
+- `Failed to send invoice email for invoice {InvoiceId}.` / `Failed to send overdue notification email for invoice {InvoiceId}.` — the send threw; the exception detail is logged right above this line.
+
+For the overdue path specifically, you can watch it happen in order:
+1. `Flagged {Count} invoice(s) as Overdue and queued their outbox events.` (scanner)
+2. *(no explicit success line for the relay — see the Outbox check below)*
+3. `Notification for event {EventId} already Sent; skipping.` only appears on Kafka redelivery of an already-processed event — its *absence* on first delivery is expected, not a bug.
+
+### 2. The `Notification` row — the authoritative record, per invoice
+
+```
+GET /api/notifications?invoiceId={id}
+```
+(or visit `/notifications` in the frontend). Each row has `status` (`Pending`/`Sent`/`Failed`), `sentAt`, and the exact email `message` body that was sent. `Pending` lingering for more than a few seconds means something crashed mid-send — check the logs above for that invoice's id.
+
+### 3. The database directly (useful for the overdue pipeline's intermediate steps)
+
+```bash
+docker exec -it invoicetracker-postgres psql -U invoicetracker -d invoicetracker \
+  -c "SELECT \"Id\", \"Type\", \"OccurredAt\", \"ProcessedAt\" FROM \"OutboxMessages\" ORDER BY \"OccurredAt\" DESC LIMIT 5;"
+```
+A non-null `ProcessedAt` confirms `OutboxRelayService` successfully published that row to Kafka (this is the one step with no dedicated success log line, so this query is the only direct confirmation of it).
+
+```bash
+docker exec -it invoicetracker-postgres psql -U invoicetracker -d invoicetracker \
+  -c "SELECT \"Id\", \"InvoiceId\", \"NotificationType\", \"Status\", \"SentAt\" FROM \"Notifications\" ORDER BY \"SentAt\" DESC NULLS FIRST LIMIT 5;"
+```
+
+### 4. Resend's own dashboard (only if you configured a real API key)
+
+[resend.com/emails](https://resend.com/emails) shows every send attempt with delivery status — the most authoritative check when you actually want to confirm real-world delivery rather than just that the app attempted it.
+
+### Triggering the overdue path without waiting 15 minutes
+
+Two options, from least to most invasive:
+
+- **Backdate the due date directly in Postgres** (fastest, no restart needed) — send a Draft invoice first (so it's `Unpaid`), then:
+  ```bash
+  docker exec -it invoicetracker-postgres psql -U invoicetracker -d invoicetracker \
+    -c "UPDATE \"Invoices\" SET \"DueDate\" = NOW() - INTERVAL '1 day' WHERE \"Id\" = '<invoice-id>';"
+  ```
+  The next scanner tick (≤15 min by default) will pick it up. Combine with the next option to not wait even that long.
+- **Lower the intervals for a test run** — override `Kafka__OverdueScanIntervalMinutes` (try `1`) and `Kafka__OutboxRelayIntervalSeconds` (try `5`) as environment variables (or edit `appsettings.Development.json` directly, but don't commit that change) before starting the API.
+
 ## API documentation
 
-Swagger/OpenAPI UI is wired up (`app.UseSwaggerUI()`) but only enabled when `ASPNETCORE_ENVIRONMENT=Development` — run the API locally (see [Local development](#local-development)) and open **http://localhost:5100/swagger**. It is intentionally not exposed on the live Production deployment.
+Swagger/OpenAPI generation is wired up (`app.UseSwaggerUI()`) but only enabled when `ASPNETCORE_ENVIRONMENT=Development`. It is intentionally not exposed on the live Production deployment.
+
+The OpenAPI document is available at **http://localhost:5100/swagger/v1/swagger.json** whenever the API is running locally (see [Local development](#local-development)). It can be downloaded and imported into external tools — e.g. [editor.swagger.io](https://editor.swagger.io), Postman, or Insomnia — to browse or exercise the API, or fed into an OpenAPI codegen tool to generate a typed client.
 
 ## Database migrations
 
@@ -125,6 +218,8 @@ Migrations are **applied manually**, not automatically on container/application 
 cd backend/src/InvoiceTracker.Api
 dotnet ef database update
 ```
+
+**Forgot this step?** Nothing in the app detects or reports a missing schema — you'll just see generic 500s from the API, and the frontend will show a generic error rather than anything pointing at the real cause. If you see `relation "..." does not exist` in `docker compose logs api` (or in the native `dotnet run` console), that's the tell — run the command above now; it's safe to run at any time and won't duplicate or break anything already applied.
 
 For a deployment target where the .NET SDK isn't installed (e.g. the live EC2 instance, which only runs the published container image), generate an idempotent SQL script locally instead and apply it directly against Postgres:
 
@@ -137,17 +232,17 @@ dotnet ef migrations script --idempotent --project ../InvoiceTracker.Infrastruct
 
 **Frontend** deploys via Vercel's own git integration — every push to `main` triggers a new production build automatically (root directory `frontend/`, framework Vite). `VITE_API_BASE_URL` is a Vercel project environment variable pointing at the live API.
 
-**Backend** builds via GitHub Actions (`.github/workflows/backend-ci.yml`): every push to `main` that touches `backend/**` runs the full test suite, then builds and pushes `ghcr.io/emilioc2/invoice-tracker-api:latest` (tagged with both `latest` and the commit SHA — image pushes are gated to pushes on `main`, never PRs, since a PR's `GITHUB_TOKEN` has no `packages:write` scope). The image is then pulled and run on a single AWS EC2 `t3.micro` via `docker-compose.prod.yml` (Postgres + Kafka + the API), fronted by a Caddy reverse proxy that terminates HTTPS. Rolling out a new image on the instance today is a manual `docker compose pull && docker compose up -d` — there is no auto-deploy webhook from GHCR to the EC2 instance.
+**Backend** builds via GitHub Actions (`.github/workflows/backend-ci.yml`): every push to `main` that touches `backend/**` runs the full test suite, then builds and pushes `ghcr.io/emilioc2/invoice-tracker-api:latest` (tagged with both `latest` and the commit SHA — image pushes are gated to pushes on `main`, never PRs, since a PR's `GITHUB_TOKEN` has no `packages:write` scope). The image is then pulled and run on a single AWS EC2 `t3.micro` via `docker-compose.prod.yml`, which defines all four services together — Postgres, Kafka, the API, and a Caddy reverse proxy that terminates HTTPS. Rolling out a new image on the instance today is a manual `docker compose pull && docker compose up -d` — there is no auto-deploy webhook from GHCR to the EC2 instance.
 
 Caddy exists specifically because the live frontend is HTTPS (Vercel) and browsers block a secure page from calling a plain-HTTP API as "mixed content" — this was discovered by actually driving a real browser session against the live deployment, not assumed up front. Since the project has no purchased domain, Caddy gets a free Let's Encrypt certificate against a [nip.io](https://nip.io) hostname, which resolves straight back to the instance's own public IP (`13-53-216-75.nip.io` → `13.53.216.75`) — no DNS registration needed.
 
-**Kubernetes manifests** (`k8s/`) exist as artifacts demonstrating Deployment/Service/ConfigMap/Secret orchestration for the API, Postgres, and Kafka — written to be runnable against a local `kind`/`minikube` cluster (and verified against a real `kind` cluster during development), but never deployed to a live cluster. See [Design decisions & trade-offs](#design-decisions--trade-offs) for why.
+**Kubernetes manifests** (`k8s/`) exist as artifacts demonstrating Deployment/Service/PVC orchestration for all three components, plus ConfigMap/Secret specifically for the API and Postgres — written to be runnable against a local `kind`/`minikube` cluster (and verified against a real `kind` cluster during development), but never deployed to a live cluster. See [Design decisions & trade-offs](#design-decisions--trade-offs) for why.
 
 ## CI/CD
 
 `.github/workflows/backend-ci.yml` runs on every pull request and push to `main` that touches `backend/**`:
 
-1. **`build-and-test`** — `dotnet restore`/`build`/`test` (both the unit and integration suites) against `InvoiceTracker.sln`, on every PR and push.
+1. **`build-and-test`** — `dotnet restore`/`build` against `InvoiceTracker.sln`, then runs both the unit and integration test projects individually, on every PR and push.
 2. **`build-and-push-image`** — builds `backend/Dockerfile` and pushes to GHCR, only on a push to `main` (never a PR).
 
 The frontend has no custom GitHub Actions workflow — Vercel's own git integration handles its build/test/deploy pipeline independently.
@@ -160,16 +255,16 @@ The frontend has no custom GitHub Actions workflow — Vercel's own git integrat
 - **KRaft-mode Kafka** — no separate Zookeeper container, which matters on a RAM-constrained single VM.
 - **Resend sandbox-mode limitation** — the deployed `IEmailSender` implementation uses Resend's shared sender address with no domain verification, which in sandbox mode can only deliver to the email address that owns the Resend account, not arbitrary client inboxes. This is enough to prove the outbound integration (including PDF attachments) fires correctly on every triggering event, but not to guarantee delivery to a real client's inbox — verifying a real sending domain with Resend would lift this limitation.
 - **AWS `t3.micro` RAM trade-off** — running Postgres + Kafka + the API together on a 1GB-RAM instance is tight. Mitigations actually applied: KRaft-mode Kafka (no Zookeeper), a trimmed Kafka JVM heap (`KAFKA_HEAP_OPTS=-Xmx384M -Xms384M` — the image's 1GB default heap alone exceeded the instance's total RAM), and a 2GB swap file on the instance. Kafka OOM'd on first boot before these were applied, confirming the trade-off is real, not theoretical.
-- **Why the Kubernetes manifests aren't live** — they exist purely to demonstrate container-orchestration literacy (Deployment/Service/ConfigMap/Secret for each of the three components), not because the project needs a cluster at this scale; a single EC2 instance running docker-compose is simpler and cheaper for one small app. The manifests were verified against a real local `kind` cluster, which caught three genuine Kubernetes-specific bugs in the process (see git history around the Kubernetes-manifests commit) that a Docker-only comparison never would have surfaced.
+- **Why the Kubernetes manifests aren't live** — they exist purely to demonstrate container-orchestration literacy (Deployment/Service/PVC for each of the three components, plus ConfigMap/Secret for the API and Postgres), not because the project needs a cluster at this scale; a single EC2 instance running docker-compose is simpler and cheaper for one small app. The manifests were verified against a real local `kind` cluster, which caught three genuine Kubernetes-specific bugs in the process (see git history around the Kubernetes-manifests commit) that a Docker-only comparison never would have surfaced.
 - **Draft-only invoice editing** — line items, due date, and client can only change while an invoice is `Draft`; once sent, the only path forward is Cancel + recreate. This keeps the "what the client was actually sent" question unambiguous, at the cost of not supporting in-place corrections to a sent invoice.
 - **Centralized status transitions (`TransitionTo`)** — `Invoice`, `Client`, and `UserBusinessMembership` each guard their own status changes through a single domain method rather than letting every caller re-implement "is this transition legal," so the transition rules live in exactly one place per entity.
 - **Soft delete via `Status`/`ArchivedAt`, never a hard delete** — a removed client or archived invoice simply stops appearing in default list views; the row (and its history) is never destroyed.
-- **Per-business invoice numbering under concurrency** — `INV-0001`, `INV-0002`, etc., scoped per business, generated via a row-locked `BusinessInvoiceCounter` rather than a native Postgres sequence (which would mean dynamically running `CREATE SEQUENCE` for every business created at runtime).
+- **Per-business invoice numbering under concurrency** — `INV-0001`, `INV-0002`, etc., scoped per business, generated via an atomic `INSERT ... ON CONFLICT DO UPDATE` upsert on `BusinessInvoiceCounter` (deliberately not explicit row-locking, and not a native Postgres sequence, which would mean dynamically running `CREATE SEQUENCE` for every business created at runtime).
 - **Idempotent Kafka consumption via `SourceEventId`** — the overdue-reminder consumer records a `Pending` `Notification` row *before* attempting to send, keyed by the triggering event's id, so a crash between sending and recording can never result in a duplicate send or a silently lost attempt.
 
 ## Known limitations / possible future work
 
-Ties back to `source_documents/requirements.md`'s explicit out-of-scope list:
+The first five tie back to `source_documents/requirements.md`'s explicit out-of-scope list; the rest are operational limitations of the current deployment, not scope decisions:
 
 - No real payment gateway integration — `Paid` is a manual status flip, not a captured payment.
 - No recurring invoices or invoice templates.
@@ -196,6 +291,7 @@ Ties back to `source_documents/requirements.md`'s explicit out-of-scope list:
 ├── frontend/
 │   └── src/                               # React SPA (routes, components, api client, hooks)
 ├── k8s/                                   # Kubernetes manifests (artifacts only — see above)
+├── source_documents/                      # requirements.md + architecture.md — authoritative source docs
 ├── docker-compose.yml                     # Local dev / full stack
 ├── docker-compose.prod.yml                # Live-deployment variant (EC2)
 ├── Caddyfile                              # Live-deployment HTTPS reverse proxy
