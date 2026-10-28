@@ -10,7 +10,7 @@ Eternity Invoicing lets a business register, add clients, create and send invoic
 
 | Layer | Choice |
 |---|---|
-| Backend | C# / .NET 8 Web API, Clean Architecture (Domain / Application / Infrastructure / Api), CQRS via MediatR, FluentValidation |
+| Backend | C# / .NET 10 Web API, Clean Architecture (Domain / Application / Infrastructure / Api), CQRS via MediatR, FluentValidation |
 | Database | PostgreSQL via EF Core |
 | Messaging | Kafka (KRaft mode, no Zookeeper), transactional outbox pattern for publishing |
 | Auth | ASP.NET Core Identity + JWT bearer tokens |
@@ -50,7 +50,7 @@ The API is a layered Clean Architecture project (`Domain` → `Application` → 
 
 ### Prerequisites
 
-- .NET 8 SDK
+- .NET 10 SDK
 - Node.js 20+
 - Docker (for the full `docker-compose` stack, and for backend integration tests, which use Testcontainers)
 

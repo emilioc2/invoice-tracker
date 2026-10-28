@@ -8,7 +8,7 @@
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: build -----------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy only the .csproj files first (in dependency order) so `dotnet restore`
@@ -33,7 +33,7 @@ RUN dotnet publish src/InvoiceTracker.Api/InvoiceTracker.Api.csproj \
     --output /app/publish
 
 # ---- Stage 2: runtime -----------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 COPY --from=build --chown=app:app /app/publish .
@@ -65,7 +65,7 @@ EXPOSE 5100
 # placeholder values for all of these — see each setting's own "_comment" —
 # so the container must receive real values at `docker run`/compose time.
 
-# mcr.microsoft.com/dotnet/aspnet:8.0 ships a built-in non-root "app" user
+# mcr.microsoft.com/dotnet/aspnet:10.0 ships a built-in non-root "app" user
 # (see Microsoft's .NET container image docs) — switch to it instead of
 # running as the image's default root user.
 USER app

@@ -7,7 +7,7 @@ using InvoiceTracker.Application;
 using InvoiceTracker.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,14 +35,16 @@ builder.Services.AddSwaggerGen(options =>
         In = ParameterLocation.Header,
         Description = "Enter 'Bearer {your JWT}'"
     });
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    // Microsoft.OpenApi v2 (pulled in transitively by Swashbuckle.AspNetCore 10.x) replaced the old
+    // OpenApiSecurityScheme-with-a-Reference-property pattern with a dedicated reference type
+    // (OpenApiSecuritySchemeReference) and changed AddSecurityRequirement to a document-aware
+    // factory delegate, since OpenApiSecurityRequirement's dictionary key now needs the hosting
+    // OpenApiDocument to resolve the "Bearer" scheme registered above via AddSecurityDefinition.
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
         {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-            },
-            Array.Empty<string>()
+            new OpenApiSecuritySchemeReference("Bearer", document),
+            new List<string>()
         }
     });
 });
