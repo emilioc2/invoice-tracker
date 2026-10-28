@@ -51,7 +51,7 @@ The API is a layered Clean Architecture project (`Domain` → `Application` → 
 ### Prerequisites
 
 - .NET 10 SDK
-- Node.js 20+
+- Node.js 26+
 - Docker (for the full `docker-compose` stack, and for backend integration tests, which use Testcontainers)
 
 ### Option A — full stack via Docker (simplest)

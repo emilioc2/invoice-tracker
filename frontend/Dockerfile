@@ -8,7 +8,7 @@
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: build ---------------------------------------------------------
-FROM node:20-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 
 # Install dependencies first so this layer is cached across source changes.
